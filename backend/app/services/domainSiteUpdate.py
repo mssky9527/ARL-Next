@@ -68,7 +68,16 @@ class DomainSiteUpdate(object):
         site_info_list = deduplicated_site_info_list
 
         if site_info_list:
-            utils.conn_db('site').insert_many(site_info_list)
+            from pymongo import UpdateOne
+            operations = []
+            for info in site_info_list:
+                operations.append(UpdateOne(
+                    {'task_id': info['task_id'], 'site': info['site']},
+                    {'$set': info},
+                    upsert=True
+                ))
+            if operations:
+                utils.conn_db('site').bulk_write(operations)
 
         # Update available_sites to exactly match the fetched sites
         # This ensures site_screenshot targets the exact URLs in the database

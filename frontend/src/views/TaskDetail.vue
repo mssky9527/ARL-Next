@@ -154,7 +154,7 @@
                 </a-tag>
               </template>
 
-              <span class="add-tag">添加标签</span>
+              <span class="add-tag" @click="openTagModal(record)" style="cursor: pointer;">添加标签</span>
             </div>
           </div>
         </template>
@@ -371,6 +371,12 @@
           </div>
         </template>
 
+        <template v-else-if="column.key === 'wih_site'">
+          <a :href="record.site" target="_blank" style="word-break: break-all;">
+            {{ record.site || '-' }}
+          </a>
+        </template>
+
       </template>
     </a-table>
 
@@ -428,6 +434,13 @@
 
     <a-modal v-model:open="previewVisible" :footer="null" width="85vw" centered @cancel="previewVisible = false" :bodyStyle="{ padding: '16px' }">
       <img :src="previewImage" style="width: 100%; max-height: 85vh; object-fit: contain; display: block;" />
+    </a-modal>
+
+    <!-- 添加标签弹窗 -->
+    <a-modal v-model:open="tagVisible" title="添加标签" @ok="submitTag" :confirmLoading="tagSubmitLoading" width="400px" okText="确 定" cancelText="取 消">
+      <div style="margin-top: 20px;">
+        <a-input v-model:value="newTagValue" placeholder="请输入标签名称" />
+      </div>
     </a-modal>
 <!--    风险任务下发弹窗-->
     <a-modal
@@ -523,6 +536,43 @@ const openFingerModal = async (fingerName) => {
     fingerModalLoading.value = false;
   }
 };
+
+// 标签管理逻辑
+const tagVisible = ref(false);
+const tagSubmitLoading = ref(false);
+const newTagValue = ref('');
+const currentTagRecord = ref(null);
+
+const openTagModal = (record) => {
+  currentTagRecord.value = record;
+  newTagValue.value = '';
+  tagVisible.value = true;
+};
+
+const submitTag = async () => {
+  if (!newTagValue.value.trim()) {
+    return message.warning('标签名称不能为空');
+  }
+  tagSubmitLoading.value = true;
+  try {
+    const res = await request.post('/site/add_tag/', {
+      _id: currentTagRecord.value._id || currentTagRecord.value.id,
+      tag: newTagValue.value.trim()
+    });
+    if (res.code === 200) {
+      message.success('添加标签成功');
+      tagVisible.value = false;
+      fetchData(); // 重新加载数据
+    } else {
+      message.error(res.message || '添加标签失败');
+    }
+  } catch (error) {
+    message.error('请求异常');
+  } finally {
+    tagSubmitLoading.value = false;
+  }
+};
+
 const targetName = ref(query.targetName || '未知目标');
 const targetList = computed(() => {
   return String(targetName.value).split(/[,\s]+/).filter(Boolean);
@@ -581,19 +631,19 @@ const tabConfig = reactive({
       { label: '站点', key: 'site', operator: '=' },
       { label: '主机名', key: 'hostname', operator: '=' },
       { label: '标题', key: 'title', operator: '=' },
-      { label: 'Web Server', key: 'server', operator: '=' },
-      { label: '状态码', key: 'status_code', operator: '=' },
+      { label: 'Web Server', key: 'http_server', operator: '=' },
+      { label: '状态码', key: 'status', operator: '=' },
       { label: '标头', key: 'headers', operator: '=' },
       { label: '指纹', key: 'finger', operator: '=' },
-      { label: 'favicon hash', key: 'favicon_hash', operator: '=' },
+      { label: 'favicon hash', key: 'favicon.hash', operator: '=' },
       { label: '标签', key: 'tag', operator: '=' }
     ],
     // 💥 修复：删除了瞎加的 IP、端口和操作列，完全对齐原版站点表格！表格控制
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
       { title: '站点', key: 'site', width: 250 },
+      { title: '状态码', dataIndex: 'status', key: 'status', width: 100, align: 'center' },
       { title: '标题', dataIndex: 'title', key: 'title', width: 200 },
-      // 删除了你加的 server 和 status 列
       { title: 'headers', key: 'headers',width: 500},
       { title: 'finger', key: 'finger', width: 150 },
       { title: '截图', key: 'screenshot', width: 280 } // 保持宽度给图片留足空间
@@ -885,7 +935,7 @@ const tabConfig = reactive({
       { title: '记录类型', dataIndex: 'record_type', key: 'record_type', width: 120 },
       { title: '内容', dataIndex: 'content', key: 'content', width: 250 },
       { title: '来源 JS', key: 'wih_source', width: 450 },
-      { title: '来源站点', dataIndex: 'site', key: 'site', width: 250 }
+      { title: '来源站点', dataIndex: 'site', key: 'wih_site', width: 250 }
     ]
   },
 
@@ -1304,7 +1354,7 @@ const submitRiskTask = async () => {
 </script>
 
 <style scoped>
-.site-header { line-height: 1.5; }
+.site-header { line-height: 1.5; word-break: break-all; }
 .site-img { width: 16px; height: 16px; margin-right: 8px; vertical-align: middle; }
 .site-word { color: var(--arl-text-color); opacity: 0.45; font-size: 12px; margin: 4px 0; }
 /* 完美复刻原版的 "添加标签" 按钮 (灰色虚线框) */

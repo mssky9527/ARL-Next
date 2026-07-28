@@ -333,3 +333,85 @@ def clean_task_data(task_id):
             shutil.rmtree(screenshot_path, ignore_errors=True)
         except Exception as e:
             logger.error(f"Error cleaning screenshot dir for task {task_id}: {e}")
+
+def safe_insert_asset(collection, unique_keys, item):
+    """
+    通用资产安全入库函数，防止重复数据。
+    :param collection: 集合名，例如 'site', 'ip', 'domain'
+    :param unique_keys: 唯一键列表，例如 ["task_id", "site"] 或者是更复杂的联合键
+    :param item: 要插入的数据字典
+    """
+    if not item:
+        return
+    query = {}
+    for k in unique_keys:
+        val = item.get(k)
+        if val is not None:
+            query[k] = val
+        else:
+            # 对于嵌套字段(如 'port_info.port_id') 的支持 (简易版)
+            if '.' in k:
+                parts = k.split('.')
+                curr = item
+                for p in parts:
+                    if isinstance(curr, dict):
+                        curr = curr.get(p)
+                    else:
+                        curr = None
+                        break
+                if curr is not None:
+                    query[k] = curr
+                    
+    # 如果没凑齐 unique_keys，就直接退化成 insert_one（这种情况应该属于脏数据或特殊表）
+    if not query or len(query) != len(unique_keys):
+        conn_db(collection).insert_one(item)
+    else:
+        conn_db(collection).update_one(query, {"$set": item}, upsert=True)
+
+
+from pymongo import UpdateOne
+def safe_insert_asset_many(collection, unique_keys, items):
+    """
+    通用资产安全批量入库函数，防止重复数据且提升性能。
+    :param collection: 集合名
+    :param unique_keys: 唯一键列表
+    :param items: 要插入的数据字典列表
+    """
+    if not items:
+        return
+    
+    operations = []
+    insert_items = []
+    
+    for item in items:
+        query = {}
+        for k in unique_keys:
+            val = item.get(k)
+            if val is not None:
+                query[k] = val
+            else:
+                if '.' in k:
+                    parts = k.split('.')
+                    curr = item
+                    for p in parts:
+                        if isinstance(curr, dict):
+                            curr = curr.get(p)
+                        else:
+                            curr = None
+                            break
+                    if curr is not None:
+                        query[k] = curr
+                        
+        if not query or len(query) != len(unique_keys):
+            insert_items.append(item)
+        else:
+            operations.append(UpdateOne(query, {"$set": item}, upsert=True))
+            
+    if insert_items:
+        conn_db(collection).insert_many(insert_items)
+        
+    if operations:
+        # 分批写入，防止数据包过大
+        batch_size = 1000
+        for i in range(0, len(operations), batch_size):
+            conn_db(collection).bulk_write(operations[i:i+batch_size], ordered=False)

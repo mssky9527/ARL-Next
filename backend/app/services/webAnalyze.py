@@ -27,17 +27,27 @@ class WebAnalyze(BaseThread):
                     self.analyze_map[site] = data.get("applications", [])
                     return
                 elif res.status_code == 503:
-                    logger.warning("WebAnalyze HTTP 503 for {}, server is restarting. Retrying in 10s...".format(site))
-                    time.sleep(10)
-                    continue
+                    if attempt == 0:
+                        logger.warning("WebAnalyze HTTP 503 for {}, arl-puppeteer is busy/restarting. Retrying in 2s...".format(site))
+                        time.sleep(2)
+                        continue
+                    else:
+                        logger.warning("WebAnalyze HTTP 503 for {} again. Stop retrying to save time.".format(site))
+                        self.analyze_map[site] = []
+                        return
                 else:
                     logger.warning("WebAnalyze HTTP Error {} for {}: {}".format(res.status_code, site, res.text))
                     self.analyze_map[site] = []
                     return
             except requests.exceptions.ConnectionError:
-                logger.warning("WebAnalyze ConnectionError for {}. Retrying in 5s...".format(site))
-                time.sleep(5)
-                continue
+                if attempt == 0:
+                    logger.warning("WebAnalyze ConnectionError for {}. Retrying in 2s...".format(site))
+                    time.sleep(2)
+                    continue
+                else:
+                    logger.warning("WebAnalyze ConnectionError for {} again. Stop retrying.".format(site))
+                    self.analyze_map[site] = []
+                    return
             except Exception as e:
                 logger.warning("Failed to parse webAnalyze output for {}: {}".format(site, e))
                 self.analyze_map[site] = []

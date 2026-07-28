@@ -24,7 +24,9 @@ logger = utils.get_logger()
 
 
 class DomainBrute(object):
-    def __init__(self, base_domain, word_file=Config.DOMAIN_DICT_2W, wildcard_domain_ip=None):
+    def __init__(self, base_domain, word_file=None, wildcard_domain_ip=None):
+        if word_file is None:
+            word_file = Config.DOMAIN_DICT_2W
         if wildcard_domain_ip is None:
             wildcard_domain_ip = []
         self.base_domain = base_domain
@@ -375,7 +377,9 @@ class AltDNS(object):
         return out
 
 
-def domain_brute(base_domain, word_file=Config.DOMAIN_DICT_2W, wildcard_domain_ip=None):
+def domain_brute(base_domain, word_file=None, wildcard_domain_ip=None):
+    if word_file is None:
+        word_file = Config.DOMAIN_DICT_2W
     if wildcard_domain_ip is None:
         wildcard_domain_ip = []
 
@@ -537,7 +541,7 @@ class DomainTask(CommonTask):
             domain_parsed = utils.domain_parsed(domain_info["domain"])
             if domain_parsed:
                 domain_info["fld"] = domain_parsed["fld"]
-            utils.conn_db('domain').insert_one(domain_info)
+            utils.safe_insert_asset('domain', ['task_id', 'domain'], domain_info)
 
     def domain_brute(self):
         # 调用工具去进行域名爆破，如果存在泛解析，会把包含泛解析的IP的域名给删除
@@ -678,7 +682,7 @@ class DomainTask(CommonTask):
             ip_info = ip_info_obj.dump_json(flag=False)
             ip_info["task_id"] = self.task_id
 
-            utils.conn_db('ip').insert_one(ip_info)
+            utils.safe_insert_asset('ip', ['task_id', 'ip'], ip_info)
 
         self.ip_info_list.extend(ip_info_list)
 
@@ -726,7 +730,7 @@ class DomainTask(CommonTask):
         for ip_info_obj in fake_ip_info_list:
             ip_info = ip_info_obj.dump_json(flag=False)
             ip_info["task_id"] = self.task_id
-            utils.conn_db('ip').insert_one(ip_info)
+            utils.safe_insert_asset('ip', ['task_id', 'ip'], ip_info)
 
     def save_service_info(self):
         self.service_info_list = []
@@ -754,7 +758,8 @@ class DomainTask(CommonTask):
                                                                      'product': _info.product,
                                                                      'version': _info.version})
         if self.service_info_list:
-            utils.conn_db('service').insert(self.service_info_list)
+            for srv_item in self.service_info_list:
+                utils.safe_insert_asset('service', ['task_id', 'service_name'], srv_item)
 
     def ssl_cert(self):
         if self.options.get("port_scan"):
@@ -773,7 +778,7 @@ class DomainTask(CommonTask):
                 "cert": self.cert_map[target],
                 "task_id": self.task_id,
             }
-            utils.conn_db('cert').insert_one(item)
+            utils.safe_insert_asset('cert', ['task_id', 'ip', 'port'], item)
 
     def build_single_domain_info(self, domain):
         _type = "A"
@@ -925,7 +930,7 @@ class DomainTask(CommonTask):
             self.npoc_service_target_set.add(item["target"])
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
-            utils.conn_db('npoc_service').insert_one(item)
+            utils.safe_insert_asset('npoc_service', ['task_id', 'target'], item)
 
     def start_poc_run(self):
         """poc run"""
@@ -969,7 +974,7 @@ class DomainTask(CommonTask):
         for item in result:
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
-            utils.conn_db('vuln').insert_one(item)
+            utils.safe_insert_asset('vuln', ['task_id', 'vuln_url', 'plugin_name'], item)
 
     def find_vhost_vuln(self):
         domains = find_private_domain_by_task_id(self.task_id)
@@ -992,7 +997,7 @@ class DomainTask(CommonTask):
             save_item["verify_obj"] = result
             save_item["task_id"] = self.task_id
             save_item["save_date"] = utils.curr_date()
-            utils.conn_db('vuln').insert_one(save_item)
+            utils.safe_insert_asset('vuln', ['task_id', 'vuln_url', 'plugin_name'], save_item)
 
     def start_find_vhost(self):
         if self.options.get("findvhost"):
@@ -1056,11 +1061,55 @@ class DomainTask(CommonTask):
             for url in page_map:
                 item = build_url_item(url, self.task_id, source=CollectSource.SEARCHENGINE)
                 item.update(page_map[url])
-                utils.conn_db('url').insert_one(item)
+                item["task_id"] = self.task_id
+                utils.safe_insert_asset('url', ['task_id', 'url'], item)
 
-    def start_wih_domain_update(self):
-        if self.wih_domain_set:
-            domain_site_update(self.task_id, list(self.wih_domain_set), "wih")
+    def process_wih_domains(self):
+        if not self.wih_domain_set:
+            return
+
+        self.update_task_field("status", "wih_domain_update")
+        t1 = time.time()
+        
+        from app.helpers import find_domain_by_task_id
+        processed_domains = set(find_domain_by_task_id(self.task_id))
+        
+        iteration = 1
+        while self.wih_domain_set - processed_domains:
+            new_domains = list(self.wih_domain_set - processed_domains)
+            processed_domains.update(new_domains)
+            
+            logger.info("wih_domain_update iteration {} found {} new domains".format(iteration, len(new_domains)))
+            
+            domain_info_list = self.build_domain_info(new_domains)
+            if self.task_tag == "task":
+                domain_info_list = self.clear_domain_info_by_record(domain_info_list)
+                self.save_domain_info_list(domain_info_list, source="wih")
+            
+            if not domain_info_list:
+                break
+                
+            new_sites = services.probe_http([d.domain for d in domain_info_list], 15)
+            if not new_sites:
+                continue
+                
+            self.site_list.extend(new_sites)
+            
+            web_site_fetch = WebSiteFetch(task_id=self.task_id,
+                                          sites=new_sites, options=self.options,
+                                          scope_domain=[self.base_domain])
+            web_site_fetch.run()
+            
+            self.wih_domain_set.update(web_site_fetch.wih_domain_set)
+            
+            iteration += 1
+
+        # 更新主体 web_site_fetch 的 sites 列表，确保后续 poc_run 能扫描到新增的站点
+        if hasattr(self, 'web_site_fetch') and self.web_site_fetch:
+            self.web_site_fetch.sites = self.site_list.copy()
+
+        elapse = time.time() - t1
+        self.update_services("wih_domain_update", elapse)
 
     def run(self):
         self.update_task_field("start_time", utils.curr_date())
@@ -1074,11 +1123,11 @@ class DomainTask(CommonTask):
 
         self.start_site_fetch()
 
+        self.process_wih_domains()
+
         self.start_find_vhost()
 
         self.start_poc_run()
-
-        self.start_wih_domain_update()
 
         # 执行统计和同步操作
         self.common_run()

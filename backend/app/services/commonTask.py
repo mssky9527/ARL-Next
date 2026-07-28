@@ -35,7 +35,7 @@ class CommonTask(object):
         for key in finger_stat_map:
             data = finger_stat_map[key].copy()
             data["task_id"] = self.task_id
-            utils.conn_db('stat_finger').insert_one(data)
+            utils.safe_insert_asset('stat_finger', ['task_id', 'name'], data)
 
     def insert_cip_stat(self):
         cip_map = utils.arl.gen_cip_map(self.task_id)
@@ -55,7 +55,7 @@ class CommonTask(object):
                 "task_id": self.task_id
             }
 
-            utils.conn_db('cip').insert_one(data)
+            utils.safe_insert_asset('cip', ['task_id', 'cidr_ip'], data)
 
     # 资产同步
     def sync_asset(self):
@@ -170,7 +170,16 @@ class WebSiteFetch(object):
         self.site_info_list = deduplicated_site_info_list
         logger.info("save_site_info site:{}, {}".format(len(self.site_info_list), self.__str__()))
         if self.site_info_list:
-            utils.conn_db('site').insert_many(self.site_info_list)
+            from pymongo import UpdateOne
+            operations = []
+            for info in self.site_info_list:
+                operations.append(UpdateOne(
+                    {'task_id': info['task_id'], 'site': info['site']},
+                    {'$set': info},
+                    upsert=True
+                ))
+            if operations:
+                utils.conn_db('site').bulk_write(operations)
 
     def site_screenshot(self):
         # ***站点截图***
@@ -212,7 +221,8 @@ class WebSiteFetch(object):
             for url in page_map:
                 item = build_url_item(url, self.task_id, source=CollectSource.SITESPIDER)
                 item.update(page_map[url])
-                utils.conn_db('url').insert_one(item)
+                item["task_id"] = self.task_id
+                utils.safe_insert_asset('url', ['task_id', 'url'], item)
 
     def fetch_site(self):
         # ***站点信息获取***
@@ -222,13 +232,14 @@ class WebSiteFetch(object):
             self.available_sites.append(curr_site)
 
     def file_leak(self):
+        file_leak_dicts = utils.load_file(Config.FILE_LEAK_TOP_2k)
         for site in self.poc_sites:
-            pages = services.file_leak([site], utils.load_file(Config.FILE_LEAK_TOP_2k))
+            pages = services.file_leak([site], file_leak_dicts)
             for page in pages:
                 item = page.dump_json()
                 item["task_id"] = self.task_id
                 item["site"] = site
-                utils.conn_db('fileleak').insert_one(item)
+                utils.safe_insert_asset('fileleak', ['task_id', 'site', 'url'], item)
 
     @property
     def poc_sites(self):
@@ -259,7 +270,7 @@ class WebSiteFetch(object):
         for item in result:
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
-            utils.conn_db('vuln').insert_one(item)
+            utils.safe_insert_asset('vuln', ['task_id', 'vuln_url', 'plugin_name'], item)
 
     def nuclei_scan(self):
         logger.info("start nuclei_scan， poc_sites:{}".format(len(self.poc_sites)))
@@ -267,7 +278,7 @@ class WebSiteFetch(object):
         for item in scan_results:
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
-            utils.conn_db('nuclei_result').insert_one(item)
+            utils.safe_insert_asset('nuclei_result', ['task_id', 'template_id', 'host'], item)
 
         logger.info("end nuclei_scan， result:{}".format(len(scan_results)))
 
@@ -321,7 +332,7 @@ class WebSiteFetch(object):
 
             item = record.dump_json()
             item["task_id"] = self.task_id
-            utils.conn_db('wih').insert_one(item)
+            utils.safe_insert_asset('wih', ['task_id', 'site', 'url'], item)
             self.wih_record_set.add(record.fnv_hash)
 
     def run(self):

@@ -372,6 +372,10 @@ fi
 
 # 4. 从阿里云镜像仓库极速拉取并启动生产服务
 echo "🔒 正在检查基础防护机制 (Basic Auth)..."
+if [ -d "./frontend/.htpasswd" ]; then
+    echo "⚠️ 提示：发现 ./frontend/.htpasswd 是一个目录（可能是由 Docker 错误创建），正在清理..."
+    rm -rf "./frontend/.htpasswd"
+fi
 if [ ! -f "./frontend/.htpasswd" ]; then
     echo "⚠️ 提示：未检测到 ./frontend/.htpasswd 文件，正在生成默认防扫描凭证..."
     mkdir -p ./frontend

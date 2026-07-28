@@ -69,6 +69,10 @@
             <a-switch checked-children="🌙" un-checked-children="☀️" v-model:checked="isDarkMode" @change="toggleDarkMode" />
           </div>
 
+          <div style="margin-right: 24px; display: flex; align-items: center;" title="启用/禁用 Basic Auth 防护">
+            <a-switch checked-children="🔒" un-checked-children="🔓" v-model:checked="isBasicAuthEnabled" @change="toggleBasicAuth" :loading="isBasicAuthLoading" />
+          </div>
+
           <span class="header-text-action" style="cursor: pointer; margin-right: 24px; display: flex; align-items: center;" @click="handleShowMcpModal">
             <RobotOutlined style="font-size: 16px; margin-right: 4px;" />
             AI 助手接入 (MCP)
@@ -179,6 +183,9 @@ const currentUsername = ref('admin');
 const hasBgImage = ref(false);
 const isUIHidden = ref(false);
 
+const isBasicAuthEnabled = ref(true);
+const isBasicAuthLoading = ref(false);
+
 const currentTime = ref('');
 let timeInterval = null;
 
@@ -270,6 +277,8 @@ onMounted(() => {
   
   window.addEventListener('bg-image-changed', handleBgImageEvent);
   document.addEventListener('click', restoreUI);
+
+  fetchBasicAuthStatus();
 
   updateTime();
   timeInterval = setInterval(updateTime, 1000);
@@ -444,6 +453,55 @@ const refreshMcpToken = async () => {
     message.error('刷新 Token 失败，请检查网络');
   } finally {
     isRefreshingToken.value = false;
+  }
+};
+
+const fetchBasicAuthStatus = async () => {
+  try {
+    const res = await fetch('/update_stream/auth_status');
+    if (res.ok) {
+      const data = await res.json();
+      if (data.status === 'ok') {
+        isBasicAuthEnabled.value = data.enabled;
+      }
+    }
+  } catch (error) {
+    console.error('Failed to fetch basic auth status:', error);
+  }
+};
+
+const toggleBasicAuth = async (checked) => {
+  isBasicAuthLoading.value = true;
+  try {
+    // 1. 获取 token
+    const tokenRes = await request.post('/system_config/request_update_token');
+    if (tokenRes.code === 200 && tokenRes.data && tokenRes.data.token) {
+      const token = tokenRes.data.token;
+      // 2. 调用底层 toggle 接口
+      const toggleRes = await fetch(`/update_stream/toggle_auth?token=${token}&enable=${checked}`);
+      if (toggleRes.ok) {
+        const data = await toggleRes.json();
+        if (data.status === 'ok') {
+          message.success(`Basic Auth 防护已${checked ? '开启' : '关闭'}！`);
+          isBasicAuthEnabled.value = checked;
+        } else {
+          message.error('切换失败: ' + (data.message || '未知错误'));
+          isBasicAuthEnabled.value = !checked;
+        }
+      } else {
+        message.error('调用底层切换接口失败');
+        isBasicAuthEnabled.value = !checked;
+      }
+    } else {
+      message.error(tokenRes.message || '获取授权 Token 失败');
+      isBasicAuthEnabled.value = !checked;
+    }
+  } catch (error) {
+    console.error(error);
+    message.error('操作失败，请检查网络或控制台日志');
+    isBasicAuthEnabled.value = !checked;
+  } finally {
+    isBasicAuthLoading.value = false;
   }
 };
 </script>

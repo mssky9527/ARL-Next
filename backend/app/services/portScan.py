@@ -140,13 +140,15 @@ class PortScan:
         return {}
 
 
-def port_scan(targets, ports=Config.TOP_10, service_detect=False, os_detect=False,
+def port_scan(targets, ports=None, service_detect=False, os_detect=False,
               port_parallelism=32, port_min_rate=64, custom_host_timeout=None, exclude_ports=None):
     """
     [高级封装层]
     供外部 Celery Task 调用的入口函数。
     会在调用底层 Nmap 前，做一次极速去重和黑名单过滤。
     """
+    if ports is None:
+        ports = Config.TOP_10
     targets = list(set(targets)) # IP 去重
     targets = list(filter(utils.not_in_black_ips, targets)) # 过滤内部网段或黑名单
     ps = PortScan(targets=targets, ports=ports, service_detect=service_detect, os_detect=os_detect,

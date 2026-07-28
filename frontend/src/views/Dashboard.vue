@@ -84,10 +84,25 @@
                   <div class="sub-label">新增泄露</div>
                 </div>
                 <div class="stat-divider"></div>
-                <div class="stat-split-item" @click.stop="router.push('/GitHubTasks/GitHubTasksList?tab=cve_history')">
-                  <div class="val" style="color: #faad14">{{ sysInfo.github_today?.intel || 0 }}</div>
-                  <div class="sub-label">新增情报</div>
-                </div>
+                <a-tooltip placement="bottom">
+                  <template #title>
+                    <div style="font-size: 12px; line-height: 1.5;">
+                      <div style="font-weight: bold; margin-bottom: 4px; color: #faad14;">今日新增明细：</div>
+                      <div>● 新增 CVE：{{ sysInfo.github_today_breakdown?.cves || 0 }}</div>
+                      <div>● 追踪大佬：{{ sysInfo.github_today_breakdown?.hackers || 0 }}</div>
+                      <div>● 其他情报：{{ sysInfo.github_today_breakdown?.general || 0 }}</div>
+                      <div style="border-top: 1px dashed rgba(255,255,255,0.4); margin: 6px 0;"></div>
+                      <div style="font-weight: bold; margin-bottom: 4px;">全库累计收录：</div>
+                      <div>● 累计 CVE：{{ sysInfo.github_totals?.cves || 0 }}</div>
+                      <div>● 监控工具：{{ sysInfo.github_totals?.tools || 0 }}</div>
+                      <div>● 追踪大佬：{{ sysInfo.github_totals?.hackers || 0 }}</div>
+                    </div>
+                  </template>
+                  <div class="stat-split-item" @click.stop="router.push('/GitHubTasks/GitHubTasksList?tab=cve_history')">
+                    <div class="val" style="color: #faad14">{{ sysInfo.github_today?.intel || 0 }}</div>
+                    <div class="sub-label">新增情报</div>
+                  </div>
+                </a-tooltip>
               </div>
             </div>
           </div>
@@ -271,7 +286,9 @@ const sysInfo = ref({
   mem_percent: 0,
   disk_percent: 0,
   tasks: { running: 0, waiting: 0 },
-  github_today: { leaks: 0, intel: 0 }
+  github_today: { leaks: 0, intel: 0 },
+  github_today_breakdown: { cves: 0, hackers: 0, general: 0 },
+  github_totals: { cves: 0, tools: 0, hackers: 0 }
 });
 
 const logs = ref([]);
@@ -324,7 +341,7 @@ const fetchTrendAndRender = async () => {
   try {
     const res = await request.get('/api/dashboard/trend');
     if (res.code === 200 && myChart) {
-      const { days, assets, vulns } = res.data;
+      const { days, assets, vulns, leaks, cves } = res.data;
       
       const option = {
         tooltip: {
@@ -338,7 +355,7 @@ const fetchTrendAndRender = async () => {
           textStyle: { color: isDarkMode.value ? '#eee' : '#333' }
         },
         legend: {
-          data: ['新增站点', '漏洞'],
+          data: ['新增站点', '漏洞', '代码泄露', 'CVE'],
           top: 0,
           textStyle: { color: isDarkMode.value ? '#eee' : '#333' }
         },
@@ -368,7 +385,7 @@ const fetchTrendAndRender = async () => {
           },
           {
             type: 'value',
-            name: '漏洞数量',
+            name: '风险/事件数量',
             nameTextStyle: { color: isDarkMode.value ? '#aaa' : '#666', padding: [0, 20, 0, 0] },
             axisLabel: { color: isDarkMode.value ? '#aaa' : '#666' },
             splitLine: { show: false } 
@@ -403,6 +420,26 @@ const fetchTrendAndRender = async () => {
               borderRadius: [4, 4, 0, 0] 
             },
             data: vulns
+          },
+          {
+            name: '代码泄露',
+            type: 'line',
+            yAxisIndex: 1,
+            smooth: true,
+            symbolSize: 6,
+            data: leaks || [],
+            itemStyle: { color: '#9c27b0' },
+            lineStyle: { width: 2, shadowColor: 'rgba(156,39,176,0.3)', shadowBlur: 10, shadowOffsetY: 0 }
+          },
+          {
+            name: 'CVE',
+            type: 'line',
+            yAxisIndex: 1,
+            smooth: true,
+            symbolSize: 6,
+            data: cves || [],
+            itemStyle: { color: '#faad14' },
+            lineStyle: { type: 'dashed', width: 2, shadowColor: 'rgba(250,173,20,0.3)', shadowBlur: 10, shadowOffsetY: 0 }
           }
         ]
       };

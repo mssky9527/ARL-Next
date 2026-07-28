@@ -351,6 +351,12 @@
           </div>
         </template>
 
+        <template v-else-if="column.key === 'wih_site'">
+          <a :href="record.site" target="_blank" style="word-break: break-all;">
+            {{ record.site || '-' }}
+          </a>
+        </template>
+
       </template>
     </a-table>
 
@@ -447,7 +453,7 @@ const openFingerModal = async (fingerName) => {
   fingerModalLoading.value = true;
   fingerModalData.value = [];
   try {
-    const res = await request.get('/site/', {
+    const res = await request.get('/asset_site/', {
       params: {
         finger: fingerName,
         page: 1,
@@ -472,7 +478,7 @@ const handlePreview = (url) => { previewImage.value = url; previewVisible.value 
 // 💡 简化版 Config：仅保留全局搜索需要的配置，去除 deleteUrl
 const tabConfig = reactive({
   site: {
-    url: '/site/',
+    url: '/asset_site/',
     searchFields: [
       { label: '站点', key: 'site', operator: '=' },
       { label: '标题', key: 'title', operator: '=' },
@@ -493,8 +499,8 @@ const tabConfig = reactive({
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
       { title: '站点', key: 'site', width: 250 },
+      { title: '状态码', dataIndex: 'status', key: 'status', width: 100, align: 'center' },
       { title: '标题', dataIndex: 'title', key: 'title', width: 200 },
-      // 删除了你加的 server 和 status 列
       { title: 'headers', key: 'headers',width: 500},
       { title: 'finger', key: 'finger', width: 150 },
       { title: '截图', key: 'screenshot', width: 280 } // 保持宽度给图片留足空间
@@ -502,8 +508,8 @@ const tabConfig = reactive({
   },
   // 💡 新增：子域名 Tab 的 1:1 配置
   domain: {
-    url: '/domain/',
-    exportUrl: '/domain/export/',
+    url: '/asset_domain/',
+    exportUrl: '/asset_domain/export/',
     exportName: '子域名',
     searchFields: [
       { label: '域名', key: 'domain', operator: '=' },
@@ -525,9 +531,9 @@ const tabConfig = reactive({
   // 💡 新增：IP Tab 的 1:1 配置
 // 💡 新增：IP Tab 的 1:1 配置
   ip: {
-    url: '/ip/',
-    deleteUrl: '/ip/delete/', // 视上一轮测试情况，如果删不掉请改回 '/site/delete/'
-    exportUrl: '/ip/export/',
+    url: '/asset_ip/',
+    deleteUrl: '/asset_ip/delete/', // 视上一轮测试情况，如果删不掉请改回 '/site/delete/'
+    exportUrl: '/asset_ip/export/',
     exportName: ' IP 端口',
     searchFields: [
       { label: 'IP', key: 'ip', operator: '=' },
@@ -561,7 +567,7 @@ const tabConfig = reactive({
   },
   // 💡 重新构建：1:1 对齐截图的 SSL证书 配置
   cert: {
-    url: '/cert/',
+    url: '/asset_cert/',
     searchFields: [
       { label: 'IP字段', key: 'ip', operator: '=' },
       { label: '签发者名称', key: 'cert.issuer_dn', operator: '=' },
@@ -578,7 +584,7 @@ const tabConfig = reactive({
 
   // 💡 新增：服务 Tab 的 1:1 配置
   service: {
-    url: '/service/',
+    url: '/asset_service/',
     // 🚨 故意不写 exportUrl，完美对齐原版不带导出功能的 UI
     searchFields: [
       { label: '服务', key: 'service_name', operator: '=' },
@@ -596,7 +602,7 @@ const tabConfig = reactive({
 
   // 💡 新增：文件泄露 Tab 的 1:1 配置
   fileleak: {
-    url: '/fileleak/',
+    url: '/asset_fileleak/',
     // 🚨 同样不配置 exportUrl，隐身导出按钮
     searchFields: [
       { label: 'URL', key: 'url', operator: '=' },
@@ -615,8 +621,8 @@ const tabConfig = reactive({
 
   // 💡 新增：URL信息 Tab 的 1:1 配置
   url: {
-    url: '/url/',
-    exportUrl: '/url/export/', // 恢复导出接口
+    url: '/asset_url/',
+    exportUrl: '/asset_url/export/', // 恢复导出接口
     exportName: 'URL信息',     // 自动生成“导出URL信息”按钮
     searchFields: [
       { label: 'URL', key: 'url', operator: '=' },
@@ -656,7 +662,7 @@ const tabConfig = reactive({
 
   // 💡 新增：风险 Tab 的 1:1 配置
   vuln: {
-    url: '/vuln/',
+    url: '/asset_vuln/',
     // 🚨 截图显示无导出按钮，所以不配置 exportUrl
     searchFields: [
       { label: '漏洞名称', key: 'vul_name', operator: '=' },
@@ -677,7 +683,7 @@ const tabConfig = reactive({
 
   // 💡 新增：服务(python) Tab 的 1:1 配置
   npoc_service: {
-    url: '/npoc_service/',
+    url: '/asset_npoc_service/',
     // 🚨 截图显示无导出按钮，不配置 exportUrl
     searchFields: [
       { label: '协议', key: 'protocol', operator: '=' },
@@ -697,8 +703,8 @@ const tabConfig = reactive({
 
   // 💡 新增：C段 Tab 的 1:1 配置
   cip: {
-    url: '/cip/',
-    exportUrl: '/cip/export/', // 恢复导出接口
+    url: '/asset_cip/',
+    exportUrl: '/asset_cip/export/', // 恢复导出接口
     exportName: 'C段',         // 自动生成“导出C段”按钮
     searchFields: [
       { label: 'C段', key: 'cidr_ip', operator: '=' }
@@ -713,8 +719,8 @@ const tabConfig = reactive({
 
   // 💡 新增：nuclei Tab 的 1:1 配置
   nuclei_result: {
-    url: '/nuclei_result/',
-    deleteUrl: '/nuclei_result/delete/', // 视后端情况，如果报错可改为 '/site/delete/'
+    url: '/asset_nuclei_result/',
+    deleteUrl: '/asset_nuclei_result/delete/', // 视后端情况，如果报错可改为 '/site/delete/'
     // 🚨 截图显示无导出按钮，不配置 exportUrl
     searchFields: [
       { label: '模版ID', key: 'template_id', operator: '=' },
@@ -736,8 +742,8 @@ const tabConfig = reactive({
 
   // 💡 新增：指纹统计 Tab 的 1:1 配置
   stat_finger: {
-    url: '/stat_finger/',
-    deleteUrl: '/site/delete/', // 视后端情况，如果报错可改为 '/site/delete/'
+    url: '/asset_stat_finger/',
+    deleteUrl: '/asset_site/delete/', // 视后端情况，如果报错可改为 '/site/delete/'
     // 🚨 截图显示无导出按钮
     searchFields: [
       { 
@@ -759,8 +765,8 @@ const tabConfig = reactive({
   // 💡 新增：WIH (Web Info Hunter) Tab 的 1:1 配置
 // 💡 修复：WIH (Web Info Hunter) Tab 配置
   wih: {
-    url: '/wih/',
-    exportUrl: '/wih/export/',
+    url: '/asset_wih/',
+    exportUrl: '/asset_wih/export/',
     exportName: 'WIH',
     searchFields: [
       {
@@ -777,7 +783,7 @@ const tabConfig = reactive({
       { title: '记录类型', dataIndex: 'record_type', key: 'record_type', width: 120 },
       { title: '内容', dataIndex: 'content', key: 'content', width: 250 },
       { title: '来源 JS', key: 'wih_source', width: 450 },
-      { title: '来源站点', dataIndex: 'site', key: 'site', width: 250 }
+      { title: '来源站点', dataIndex: 'site', key: 'wih_site', width: 250 }
     ]
   }
 });
@@ -960,7 +966,7 @@ const submitTag = async () => {
   }
   tagSubmitLoading.value = true;
   try {
-    const res = await request.post('/site/add_tag/', {
+    const res = await request.post('/asset_site/add_tag/', {
       _id: currentTagRecord.value._id || currentTagRecord.value.id,
       tag: newTagValue.value.trim()
     });
@@ -981,7 +987,7 @@ const submitTag = async () => {
 const handleRemoveTag = async (record, tag) => {
   const tagStr = typeof tag === 'string' ? tag : (tag.name || tag.tag_name || tag);
   try {
-    const res = await request.post('/site/delete_tag/', {
+    const res = await request.post('/asset_site/delete_tag/', {
       _id: record._id || record.id,
       tag: tagStr
     });
@@ -999,7 +1005,7 @@ const handleRemoveTag = async (record, tag) => {
 </script>
 
 <style scoped>
-.site-header { line-height: 1.5; }
+.site-header { line-height: 1.5; word-break: break-all; }
 .site-img { width: 16px; height: 16px; margin-right: 8px; vertical-align: middle; }
 .site-word { color: var(--arl-text-color) !important; font-size: 14px !important; margin-top: 4px; margin-bottom: 0; line-height: 1.5; }
 .add-tag { color: var(--arl-text-color); cursor: pointer; font-size: 12px; margin-left: 8px; border: 1px dashed var(--arl-border-color); padding: 0 7px; border-radius: 2px; background: var(--arl-bg-light); transition: all 0.3s; }

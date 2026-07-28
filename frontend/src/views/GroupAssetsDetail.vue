@@ -5,9 +5,8 @@
 
         <a-tabs v-model:activeKey="activeTab" type="card" class="arl-detail-tabs">
       <a-tab-pane key="site" tab="站点"></a-tab-pane>
-      <a-tab-pane key="domain" tab="域名"></a-tab-pane>
+      <a-tab-pane key="domain" tab="子域名"></a-tab-pane>
       <a-tab-pane key="ip" tab="IP"></a-tab-pane>
-      <a-tab-pane key="wih" tab="WIH"></a-tab-pane>
       <a-tab-pane key="cert" tab="SSL证书"></a-tab-pane>
       <a-tab-pane key="service" tab="服务"></a-tab-pane>
       <a-tab-pane key="fileleak" tab="文件泄露"></a-tab-pane>
@@ -17,6 +16,7 @@
       <a-tab-pane key="cip" tab="C段"></a-tab-pane>
       <a-tab-pane key="nuclei_result" tab="nuclei"></a-tab-pane>
       <a-tab-pane key="stat_finger" tab="指纹统计"></a-tab-pane>
+      <a-tab-pane key="wih" tab="WIH"></a-tab-pane>
     </a-tabs>
 
     <div v-if="tabConfig[activeTab]?.searchFields" class="search-row" style="margin-bottom: 16px;">
@@ -137,7 +137,7 @@
               <template v-for="(t, idx) in (record.tag || [])" :key="idx">
                 <a-tag v-if="t !== '入口'" closable style="background: var(--arl-bg-light); color: var(--arl-text-color); border-color: var(--arl-border-color);">{{ t }}</a-tag>
               </template>
-              <span class="add-tag">添加标签</span>
+              <span class="add-tag" @click="openTagModal(record)" style="cursor: pointer;">添加标签</span>
             </div>
           </div>
         </template>
@@ -210,6 +210,12 @@
               {{ record.source || '-' }}
             </a>
           </div>
+        </template>
+
+        <template v-else-if="column.key === 'wih_site'">
+          <a :href="record.site" target="_blank" style="word-break: break-all;">
+            {{ record.site || '-' }}
+          </a>
         </template>
 
       
@@ -302,6 +308,13 @@
       <img :src="previewImage" style="width: 100%; max-height: 85vh; object-fit: contain; display: block;" />
     </a-modal>
 
+    <!-- 添加标签弹窗 -->
+    <a-modal v-model:open="tagVisible" title="添加标签" @ok="submitTag" :confirmLoading="tagSubmitLoading" width="400px" okText="确 定" cancelText="取 消">
+      <div style="margin-top: 20px;">
+        <a-input v-model:value="newTagValue" placeholder="请输入标签名称" />
+      </div>
+    </a-modal>
+
 
     <div v-if="tabConfig[activeTab]" style="display: flex; justify-content: space-between; align-items: center; padding: 0 16px; margin-top: 16px;">
       <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(pagination.total / pagination.pageSize) || 1 }} 页 / {{ pagination.total }} 条数据</div>
@@ -385,6 +398,42 @@ const selectedRowKeys = ref([]);
 const hasSelected = computed(() => selectedRowKeys.value.length > 0);
 const onSelectChange = (keys) => { selectedRowKeys.value = keys; };
 
+// 标签管理逻辑
+const tagVisible = ref(false);
+const tagSubmitLoading = ref(false);
+const newTagValue = ref('');
+const currentTagRecord = ref(null);
+
+const openTagModal = (record) => {
+  currentTagRecord.value = record;
+  newTagValue.value = '';
+  tagVisible.value = true;
+};
+
+const submitTag = async () => {
+  if (!newTagValue.value.trim()) {
+    return message.warning('标签名称不能为空');
+  }
+  tagSubmitLoading.value = true;
+  try {
+    const res = await request.post('/site/add_tag/', {
+      _id: currentTagRecord.value._id || currentTagRecord.value.id,
+      tag: newTagValue.value.trim()
+    });
+    if (res.code === 200) {
+      message.success('添加标签成功');
+      tagVisible.value = false;
+      fetchData(); // 重新加载数据
+    } else {
+      message.error(res.message || '添加标签失败');
+    }
+  } catch (error) {
+    message.error('请求异常');
+  } finally {
+    tagSubmitLoading.value = false;
+  }
+};
+
 // 指纹统计弹窗状态与方法
 const fingerModalVisible = ref(false);
 const currentFingerName = ref('');
@@ -446,6 +495,7 @@ const tabConfig = {
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
       { title: '站点', dataIndex: 'site', key: 'site', width: 250 },
+      { title: '状态码', dataIndex: 'status', key: 'status', width: 100, align: 'center' },
       { title: '标题', dataIndex: 'title', key: 'title', width: 200 },
       { title: 'headers', key: 'headers', width: 400 },
       { title: 'finger', key: 'finger', width: 150 },
@@ -523,7 +573,7 @@ const tabConfig = {
       { title: '记录类型', dataIndex: 'record_type', key: 'record_type', width: 120 },
       { title: '内容', dataIndex: 'content', key: 'content', width: 250 },
       { title: '来源 JS', dataIndex: 'source', key: 'source', width: 450 }, // 绑定 source
-      { title: '来源站点', dataIndex: 'site', key: 'site', width: 250 },
+      { title: '来源站点', dataIndex: 'site', key: 'wih_site', width: 250 },
       { title: '更新时间', dataIndex: 'update_date', key: 'update_date', width: 180 }
     ]
   },
@@ -1133,7 +1183,7 @@ const submitAddDomain = async () => {
 :deep(.ant-tabs-card-bar .ant-tabs-tab) { border-radius: 2px 2px 0 0 !important; margin-right: 4px !important; border: 1px solid var(--arl-border-color) !important; background: var(--arl-bg-light) !important; }
 :deep(.ant-tabs-card-bar .ant-tabs-tab-active) { background: var(--arl-bg-white) !important;  font-weight: 500; border-bottom-color: transparent !important; }
 
-.site-header { line-height: 1.5; }
+.site-header { line-height: 1.5; word-break: break-all; }
 .site-img { width: 16px; height: 16px; margin-right: 8px; vertical-align: middle; }
 .add-tag { color: var(--arl-text-color); cursor: pointer; font-size: 12px; border: 1px dashed var(--arl-border-color); padding: 0 7px; border-radius: 2px; background: var(--arl-bg-light); transition: all 0.3s; }
 .add-tag:hover {  }

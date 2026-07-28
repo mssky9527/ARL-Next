@@ -3,6 +3,8 @@ import time
 import requests
 from app.config import Config
 from pymongo import MongoClient
+import pymongo.errors
+import logging
 from requests.exceptions import ReadTimeout
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -22,8 +24,13 @@ proxies = {
 SET_PROXY = False
 
 
+_adapter = requests.adapters.HTTPAdapter(pool_connections=200, pool_maxsize=100)
+
+class StatelessSession(requests.Session):
+    def close(self):
+        pass
 # requests/models.py:824
-def patch_content(response, timeout=None):
+def patch_content(response, timeout=None, max_size=10*1024*1024):
     """Content of the response, in bytes."""
     start_at = time.time()
     if response._content is False:
@@ -39,6 +46,9 @@ def patch_content(response, timeout=None):
                 body += part
                 if timeout is not None and time.time() - start_at >= timeout:
                     raise ReadTimeout(f"patch_content read http response timeout: {timeout}")
+                if len(body) >= max_size:
+                    response.raw.close()
+                    break
             response._content = body
     response._content_consumed = True
     # don't need to release the connection; that's been handled by urllib3
@@ -64,27 +74,59 @@ def http_req(url, method='get', **kwargs):
         proxies['http'] = Config.PROXY_URL
         kwargs["proxies"] = proxies
 
-    conn = getattr(requests, method)(url, **kwargs)
+    with StatelessSession() as session:
+        # 必须清空自带的默认 Adapter 避免未关闭造成潜在的内存泄漏
+        session.adapters.clear()
+        session.mount('http://', _adapter)
+        session.mount('https://', _adapter)
+        conn = getattr(session, method)(url, **kwargs)
 
-    timeout = kwargs.get("timeout")
-    try:
-        if isinstance(timeout, (list, tuple)) and len(timeout) > 1 and timeout[1]:
-            timeout = timeout[1]
-    except Exception:
-        pass
+        timeout = kwargs.get("timeout")
+        try:
+            if isinstance(timeout, (list, tuple)) and len(timeout) > 1 and timeout[1]:
+                timeout = timeout[1]
+        except Exception:
+            pass
 
-    patch_content(conn, timeout)
+        try:
+            patch_content(conn, timeout)
+        except Exception:
+            conn.close()
+            raise
 
     return conn
 
 
 class ConnMongo(object):
-    def __new__(self):
-        if not hasattr(self, 'instance'):
-            self.instance = super(ConnMongo, self).__new__(self)
-            self.instance.conn = MongoClient(Config.MONGO_URL)
-        return self.instance
+    def __new__(cls):
+        import os
+        pid = os.getpid()
+        if not hasattr(cls, 'instance') or getattr(cls, '_pid', None) != pid:
+            cls.instance = super(ConnMongo, cls).__new__(cls)
+            cls.instance.conn = MongoClient(Config.MONGO_URL, connect=False)
+            cls._pid = pid
+        return cls.instance
 
+
+class SafeCollectionProxy:
+    def __init__(self, collection):
+        self._collection = collection
+
+    def __getattr__(self, name):
+        attr = getattr(self._collection, name)
+        if callable(attr) and name in ('insert_one', 'insert_many', 'insert'):
+            def wrapper(*args, **kwargs):
+                try:
+                    return attr(*args, **kwargs)
+                except pymongo.errors.DuplicateKeyError as e:
+                    logging.getLogger('arlv2').warning(f"Ignored DuplicateKeyError on {self._collection.name}: {e}")
+                    class DummyResult:
+                        inserted_id = None
+                        inserted_ids = []
+                        acknowledged = False
+                    return DummyResult()
+            return wrapper
+        return attr
 
 def conn_db(collection, db_name = None):
     # 将 asset_ 系列表重定向到常规表（排除 asset_scope）
@@ -108,7 +150,7 @@ def conn_db(collection, db_name = None):
 
     conn = ConnMongo().conn
     if db_name:
-        return conn[db_name][collection]
+        return SafeCollectionProxy(conn[db_name][collection])
 
     else:
-        return conn[Config.MONGO_DB][collection]
+        return SafeCollectionProxy(conn[Config.MONGO_DB][collection])

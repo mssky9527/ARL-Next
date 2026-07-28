@@ -23,6 +23,7 @@ services:
       # 挂载您的 SSL 证书到容器中
       - ./ssl-certs:/certs:ro
       - ./frontend/.htpasswd:/etc/nginx/.htpasswd:ro
+      - ./frontend/default.conf.prod:/etc/nginx/conf.d/default.conf
     depends_on:
       - arl-web
     networks:
@@ -44,6 +45,10 @@ services:
       - TZ=Asia/Shanghai
       - DEBIAN_FRONTEND=noninteractive
       - NO_PROXY=localhost,127.0.0.1,osint-service,mongodb,rabbitmq
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     depends_on:
       - mongodb
       - rabbitmq
@@ -83,6 +88,10 @@ services:
       - TZ=Asia/Shanghai
       - DEBIAN_FRONTEND=noninteractive
       - NO_PROXY=localhost,127.0.0.1,osint-service,mongodb,rabbitmq
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
     labels:
       - "autoheal=true"
     healthcheck:

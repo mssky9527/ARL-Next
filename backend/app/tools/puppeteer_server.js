@@ -281,32 +281,56 @@ async function takeScreenshot(url) {
 }
 
 let requestsCount = 0;
-let activeRequests = 0;
-let isShuttingDown = false;
+let isRestartingBrowser = false;
 const MAX_REQUESTS = 300; // Self-heal to prevent memory leaks
 
-function checkShutdown() {
-    if (requestsCount >= MAX_REQUESTS && !isShuttingDown) {
-        isShuttingDown = true;
-        console.log('Max requests reached, stopping new requests and waiting for active tasks to finish...');
-    }
-    
-    if (isShuttingDown && activeRequests === 0) {
-        console.log('All active tasks finished, exiting for self-healing...');
-        if (browser) browser.close().catch(() => true).finally(() => process.exit(0));
-        else process.exit(0);
+async function checkShutdown() {
+    if (requestsCount >= MAX_REQUESTS && !isRestartingBrowser) {
+        isRestartingBrowser = true;
+        requestsCount = 0; // Reset for the new browser
+        console.log('Max requests reached, performing rolling restart of browser instance...');
+        
+        const oldBrowser = browser;
+        
+        try {
+            browser = await puppeteer.launch({
+                executablePath: '/usr/bin/chromium',
+                args: [
+                    '--no-sandbox', 
+                    '--disable-setuid-sandbox', 
+                    '--disable-dev-shm-usage', 
+                    '--ignore-certificate-errors', 
+                    '--disable-gpu'
+                ],
+                ignoreHTTPSErrors: true
+            });
+            console.log('New browser spawned. Retiring old browser in background...');
+        } catch (e) {
+            console.error('Failed to launch new browser during rotation:', e);
+            browser = oldBrowser; // Revert to old if failed
+        }
+
+        isRestartingBrowser = false;
+
+        if (browser !== oldBrowser) {
+            // Give the old browser exactly 35 seconds to finish its pending tasks, then kill
+            setTimeout(() => {
+                console.log('Cleaning up retired browser...');
+                if (oldBrowser) {
+                    oldBrowser.close().catch(() => true);
+                    // Double tap to avoid zombies if close() hangs
+                    if (oldBrowser.process() && oldBrowser.process().pid) {
+                        try {
+                            process.kill(oldBrowser.process().pid, 'SIGKILL');
+                        } catch(e) {}
+                    }
+                }
+            }, 35000);
+        }
     }
 }
 
 const server = http.createServer(async (req, res) => {
-    if (isShuttingDown) {
-        res.writeHead(503, { 'Connection': 'close' });
-        res.end('Server is restarting');
-        return;
-    }
-
-    activeRequests++;
-
     if (req.method === 'POST') {
         let body = '';
         req.on('data', chunk => body += chunk.toString());
@@ -335,14 +359,12 @@ const server = http.createServer(async (req, res) => {
                 res.writeHead(500);
                 res.end(e.message);
             } finally {
-                activeRequests--;
                 checkShutdown();
             }
         });
     } else {
         res.writeHead(200);
         res.end('Puppeteer Wappalyzer Server OK');
-        activeRequests--;
         checkShutdown();
     }
 });

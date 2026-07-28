@@ -15,7 +15,10 @@ class Query(DNSQueryBase):
             "exclude": "expired"   # 排除过期的证书
         }
 
-        items = utils.http_req(self.api_url, 'get', params=param, timeout=(30.1, 50.1)).json()
+        req = utils.http_req(self.api_url, 'get', params=param, timeout=(30.1, 50.1))
+        if req.status_code != 200:
+            return []
+        items = req.json()
         results = []
         for item in items:
             for name in item["name_value"].split():

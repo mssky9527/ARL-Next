@@ -245,30 +245,7 @@
 <a-tab-pane key="ti" tab="📡 威胁情报雷达">
   <a-card :bordered="false" style="border-radius: 8px;">
     
-    <!-- 顶部概览栏 -->
-    <a-row :gutter="16" style="margin-bottom: 24px;">
-      <a-col :span="8">
-        <a-card size="small" style="background: var(--arl-bg-white); border: 1px solid var(--arl-border-color); border-radius:8px;">
-          <a-statistic title="今日捕获 CVE" :value="cveData.length" style="margin-top: 8px">
-            <template #prefix><alert-outlined style="color: var(--arl-theme-color);" /></template>
-          </a-statistic>
-        </a-card>
-      </a-col>
-      <a-col :span="8">
-        <a-card size="small" style="background: var(--arl-bg-white); border: 1px solid var(--arl-border-color); border-radius:8px;">
-          <a-statistic title="监控武器库总数" :value="toolsData.length" style="margin-top: 8px">
-            <template #prefix><tool-outlined style="color: #b37feb;" /></template>
-          </a-statistic>
-        </a-card>
-      </a-col>
-      <a-col :span="8">
-        <a-card size="small" style="background: var(--arl-bg-white); border: 1px solid var(--arl-border-color); border-radius:8px;">
-          <a-statistic title="追踪黑客总数" :value="hackersData.length" style="margin-top: 8px">
-            <template #prefix><team-outlined style="color: #52c41a;" /></template>
-          </a-statistic>
-        </a-card>
-      </a-col>
-    </a-row>
+
 
     <a-tabs v-model:activeKey="activeTabTi">
       <a-tab-pane key="cve_history" tab="🚨 CVE 漏洞雷达">
@@ -297,20 +274,25 @@
         <div class="search-row" style="margin-bottom: 16px; background-color: var(--arl-bg-light); padding: 16px; border-radius: 4px;">
           <div class="search-item">
             <span class="label">CVE 编号：</span>
-            <a-input v-model:value="cveSearchForm.cve_name" placeholder="请输入 CVE 编号" style="width: 180px;" allowClear />
+            <a-input v-model:value="cveSearchForm.cve_name" placeholder="请输入 CVE 编号" style="width: 180px;" allowClear @pressEnter="onCveSearch">
+              <template #suffix><search-outlined @click="onCveSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
+            </a-input>
           </div>
           <div class="search-item">
             <span class="label">描述：</span>
-            <a-input v-model:value="cveSearchForm.desc" placeholder="请输入描述" style="width: 180px;" allowClear />
+            <a-input v-model:value="cveSearchForm.desc" placeholder="请输入描述" style="width: 180px;" allowClear @pressEnter="onCveSearch">
+              <template #suffix><search-outlined @click="onCveSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
+            </a-input>
           </div>
         </div>
 
-        <div style="margin-bottom: 16px; display: flex; gap: 8px;">
+        <div style="margin-bottom: 16px; display: flex; gap: 16px;">
+          <a-button @click="resetCveSearch">清 除</a-button>
           <a-popconfirm title="确认删除所选记录吗？" @confirm="handleCveBatchDelete">
-            <a-button :disabled="!cveHasSelected">批量删除</a-button>
+            <a-button type="primary" danger :disabled="!cveHasSelected">批量删除</a-button>
           </a-popconfirm>
         </div>
-        <a-table :row-selection="{ selectedRowKeys: cveSelectedRowKeys, onChange: onCveSelectChange }" :loading="cveLoading" :dataSource="filteredCveData" :columns="cveColumns" :pagination="{ pageSize: 15 }" size="middle" rowKey="cve_name">
+        <a-table :row-selection="{ selectedRowKeys: cveSelectedRowKeys, onChange: onCveSelectChange }" :loading="cveLoading" :dataSource="pagedCveData" :columns="cveColumns" :pagination="false" size="middle" rowKey="cve_name">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'cve_name'">
               <a :href="record.cve_url" target="_blank" style="color: #ff4d4f; font-weight: bold; font-size: 15px;">
@@ -324,11 +306,15 @@
             </template>
             <template v-else-if="column.key === 'action'">
               <a-popconfirm title="确认删除？" @confirm="handleCveDelete(record.cve_name)">
-                <a-button size="small" danger>删除</a-button>
+                <a-button size="small" type="primary" danger ghost>删除</a-button>
               </a-popconfirm>
             </template>
           </template>
         </a-table>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0; margin-top: 16px;">
+          <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(filteredCveData.length / cvePagination.pageSize) || 1 }} 页 / {{ filteredCveData.length }} 条数据</div>
+          <a-pagination v-model:current="cvePagination.current" v-model:pageSize="cvePagination.pageSize" :total="filteredCveData.length" show-size-changer @change="onCveTableChange" @showSizeChange="onCveTableChange" />
+        </div>
       </a-tab-pane>
 
       <!-- 子 Tab 2: 武器库追踪 -->
@@ -364,17 +350,20 @@
         <div class="search-row" style="margin-bottom: 16px; background-color: var(--arl-bg-light); padding: 16px; border-radius: 4px;">
           <div class="search-item">
             <span class="label">工具URL：</span>
-            <a-input v-model:value="toolsSearchForm.repo_url" placeholder="请输入工具URL" style="width: 250px;" allowClear />
+            <a-input v-model:value="toolsSearchForm.repo_url" placeholder="请输入工具URL" style="width: 250px;" allowClear @pressEnter="onToolsSearch">
+              <template #suffix><search-outlined @click="onToolsSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
+            </a-input>
           </div>
         </div>
 
-        <div style="margin-bottom: 16px; display: flex; gap: 8px;">
+        <div style="margin-bottom: 16px; display: flex; gap: 16px;">
+          <a-button @click="resetToolsSearch">清 除</a-button>
           <a-popconfirm title="确认删除所选工具吗？" @confirm="handleToolsBatchDelete">
-            <a-button :disabled="!toolsHasSelected">批量删除</a-button>
+            <a-button type="primary" danger :disabled="!toolsHasSelected">批量删除</a-button>
           </a-popconfirm>
         </div>
 
-        <a-table :row-selection="{ selectedRowKeys: toolsSelectedRowKeys, onChange: onToolsSelectChange }" :loading="toolsLoading" :dataSource="filteredToolsData" :columns="toolsColumns" :pagination="true" size="middle" rowKey="repo_url">
+        <a-table :row-selection="{ selectedRowKeys: toolsSelectedRowKeys, onChange: onToolsSelectChange }" :loading="toolsLoading" :dataSource="pagedToolsData" :columns="toolsColumns" :pagination="false" size="middle" rowKey="repo_url">
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'repo_url'">
               <a :href="record.repo_url.replace('api.github.com/repos', 'github.com')" target="_blank" style="color: #1890ff; font-weight: 500;">
@@ -391,11 +380,15 @@
                 <a-button size="small" type="primary" ghost style="margin-right: 8px;">查看</a-button>
               </a>
               <a-popconfirm title="确认取消监控该工具？" @confirm="handleToolDelete(record.repo_url)">
-                <a-button size="small" danger>删除</a-button>
+                <a-button size="small" type="primary" danger ghost>删除</a-button>
               </a-popconfirm>
             </template>
           </template>
         </a-table>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0; margin-top: 16px;">
+          <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(filteredToolsData.length / toolsPagination.pageSize) || 1 }} 页 / {{ filteredToolsData.length }} 条数据</div>
+          <a-pagination v-model:current="toolsPagination.current" v-model:pageSize="toolsPagination.pageSize" :total="filteredToolsData.length" show-size-changer @change="onToolsTableChange" @showSizeChange="onToolsTableChange" />
+        </div>
       </a-tab-pane>
 
       <!-- 子 Tab 3: 黑客动态监测 -->
@@ -436,17 +429,20 @@
         <div class="search-row" style="margin-bottom: 16px; background-color: var(--arl-bg-light); padding: 16px; border-radius: 4px;">
           <div class="search-item">
             <span class="label">Github ID：</span>
-            <a-input v-model:value="hackersSearchForm.github_id" placeholder="请输入 Github ID" style="width: 180px;" allowClear />
+            <a-input v-model:value="hackersSearchForm.github_id" placeholder="请输入 Github ID" style="width: 180px;" allowClear @pressEnter="onHackersSearch">
+              <template #suffix><search-outlined @click="onHackersSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
+            </a-input>
           </div>
         </div>
 
-        <div style="margin-bottom: 16px; display: flex; gap: 8px;">
+        <div style="margin-bottom: 16px; display: flex; gap: 16px;">
+          <a-button @click="resetHackersSearch">清 除</a-button>
           <a-popconfirm title="确认删除所选大佬吗？" @confirm="handleHackersBatchDelete">
-            <a-button :disabled="!hackersHasSelected">批量删除</a-button>
+            <a-button type="primary" danger :disabled="!hackersHasSelected">批量删除</a-button>
           </a-popconfirm>
         </div>
 
-        <a-table :row-selection="{ selectedRowKeys: hackersSelectedRowKeys, onChange: onHackersSelectChange }" :loading="hackersLoading" :dataSource="filteredHackersData" :columns="hackersColumns" :pagination="true" size="middle" rowKey="github_id">
+        <a-table :row-selection="{ selectedRowKeys: hackersSelectedRowKeys, onChange: onHackersSelectChange }" :loading="hackersLoading" :dataSource="pagedHackersData" :columns="hackersColumns" :pagination="false" size="middle" rowKey="github_id">
           <template #emptyText>
             <div style="padding: 40px 0;">
               <inbox-outlined style="font-size: 48px; color: var(--arl-border-color);" />
@@ -471,11 +467,15 @@
                 <a-button size="small" type="primary" ghost style="margin-right: 8px;">主页</a-button>
               </a>
               <a-popconfirm title="确认取消监控？" @confirm="handleHackerDelete(record.github_id)">
-                <a-button size="small" danger>删除</a-button>
+                <a-button size="small" type="primary" danger ghost>删除</a-button>
               </a-popconfirm>
             </template>
           </template>
         </a-table>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0; margin-top: 16px;">
+          <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(filteredHackersData.length / hackersPagination.pageSize) || 1 }} 页 / {{ filteredHackersData.length }} 条数据</div>
+          <a-pagination v-model:current="hackersPagination.current" v-model:pageSize="hackersPagination.pageSize" :total="filteredHackersData.length" show-size-changer @change="onHackersTableChange" @showSizeChange="onHackersTableChange" />
+        </div>
       </a-tab-pane>
     </a-tabs>
   </a-card>
@@ -895,12 +895,24 @@ const toolsLoading = ref(false);
 const toolsData = ref([]);
 
 const toolsSearchForm = reactive({ repo_url: '' });
+const appliedToolsSearchForm = reactive({ repo_url: '' });
+const onToolsSearch = () => { Object.assign(appliedToolsSearchForm, toolsSearchForm); toolsPagination.current = 1; };
+
 const filteredToolsData = computed(() => {
   return toolsData.value.filter(item => {
-    if (toolsSearchForm.repo_url && !item.repo_url.toLowerCase().includes(toolsSearchForm.repo_url.toLowerCase())) return false;
+    if (appliedToolsSearchForm.repo_url && !item.repo_url.toLowerCase().includes(appliedToolsSearchForm.repo_url.toLowerCase())) return false;
     return true;
   });
 });
+
+const toolsPagination = reactive({ current: 1, pageSize: 10 });
+const pagedToolsData = computed(() => {
+  const start = (toolsPagination.current - 1) * toolsPagination.pageSize;
+  return filteredToolsData.value.slice(start, start + toolsPagination.pageSize);
+});
+const onToolsTableChange = (page, pageSize) => { toolsPagination.current = page; toolsPagination.pageSize = pageSize; };
+const resetToolsSearch = () => { toolsSearchForm.repo_url = ''; Object.assign(appliedToolsSearchForm, toolsSearchForm); toolsPagination.current = 1; };
+
 const toolsSelectedRowKeys = ref([]);
 const toolsHasSelected = computed(() => toolsSelectedRowKeys.value.length > 0);
 const onToolsSelectChange = (keys) => { toolsSelectedRowKeys.value = keys; };
@@ -973,12 +985,24 @@ const hackersLoading = ref(false);
 const hackersData = ref([]);
 
 const hackersSearchForm = reactive({ github_id: '' });
+const appliedHackersSearchForm = reactive({ github_id: '' });
+const onHackersSearch = () => { Object.assign(appliedHackersSearchForm, hackersSearchForm); hackersPagination.current = 1; };
+
 const filteredHackersData = computed(() => {
   return hackersData.value.filter(item => {
-    if (hackersSearchForm.github_id && !item.github_id.toLowerCase().includes(hackersSearchForm.github_id.toLowerCase())) return false;
+    if (appliedHackersSearchForm.github_id && !item.github_id.toLowerCase().includes(appliedHackersSearchForm.github_id.toLowerCase())) return false;
     return true;
   });
 });
+
+const hackersPagination = reactive({ current: 1, pageSize: 10 });
+const pagedHackersData = computed(() => {
+  const start = (hackersPagination.current - 1) * hackersPagination.pageSize;
+  return filteredHackersData.value.slice(start, start + hackersPagination.pageSize);
+});
+const onHackersTableChange = (page, pageSize) => { hackersPagination.current = page; hackersPagination.pageSize = pageSize; };
+const resetHackersSearch = () => { hackersSearchForm.github_id = ''; Object.assign(appliedHackersSearchForm, hackersSearchForm); hackersPagination.current = 1; };
+
 const hackersSelectedRowKeys = ref([]);
 const hackersHasSelected = computed(() => hackersSelectedRowKeys.value.length > 0);
 const onHackersSelectChange = (keys) => { hackersSelectedRowKeys.value = keys; };
@@ -1082,13 +1106,25 @@ const cveLoading = ref(false);
 const cveData = ref([]);
 
 const cveSearchForm = reactive({ cve_name: '', desc: '' });
+const appliedCveSearchForm = reactive({ cve_name: '', desc: '' });
+const onCveSearch = () => { Object.assign(appliedCveSearchForm, cveSearchForm); cvePagination.current = 1; };
+
 const filteredCveData = computed(() => {
   return cveData.value.filter(item => {
-    if (cveSearchForm.cve_name && !item.cve_name.toLowerCase().includes(cveSearchForm.cve_name.toLowerCase())) return false;
-    if (cveSearchForm.desc && !item.desc.toLowerCase().includes(cveSearchForm.desc.toLowerCase())) return false;
+    if (appliedCveSearchForm.cve_name && !item.cve_name.toLowerCase().includes(appliedCveSearchForm.cve_name.toLowerCase())) return false;
+    if (appliedCveSearchForm.desc && !item.desc.toLowerCase().includes(appliedCveSearchForm.desc.toLowerCase())) return false;
     return true;
   });
 });
+
+const cvePagination = reactive({ current: 1, pageSize: 10 });
+const pagedCveData = computed(() => {
+  const start = (cvePagination.current - 1) * cvePagination.pageSize;
+  return filteredCveData.value.slice(start, start + cvePagination.pageSize);
+});
+const onCveTableChange = (page, pageSize) => { cvePagination.current = page; cvePagination.pageSize = pageSize; };
+const resetCveSearch = () => { cveSearchForm.cve_name = ''; cveSearchForm.desc = ''; Object.assign(appliedCveSearchForm, cveSearchForm); cvePagination.current = 1; };
+
 const cveSelectedRowKeys = ref([]);
 const cveHasSelected = computed(() => cveSelectedRowKeys.value.length > 0);
 const onCveSelectChange = (keys) => { cveSelectedRowKeys.value = keys; };

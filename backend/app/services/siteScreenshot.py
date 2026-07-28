@@ -39,16 +39,24 @@ class SiteScreenshot(BaseThread):
                             f.write(img_data)
                     return
                 elif res.status_code == 503:
-                    logger.warning("SiteScreenshot HTTP 503 for {}, server is restarting. Retrying in 10s...".format(site))
-                    time.sleep(10)
-                    continue
+                    if attempt == 0:
+                        logger.warning("SiteScreenshot HTTP 503 for {}, arl-puppeteer is busy/restarting. Retrying in 2s...".format(site))
+                        time.sleep(2)
+                        continue
+                    else:
+                        logger.warning("SiteScreenshot HTTP 503 for {} again. Stop retrying to save time.".format(site))
+                        return
                 else:
                     logger.warning("SiteScreenshot HTTP Error {} for {}".format(res.status_code, site))
                     return
             except requests.exceptions.ConnectionError:
-                logger.warning("SiteScreenshot ConnectionError for {}. Retrying in 5s...".format(site))
-                time.sleep(5)
-                continue
+                if attempt == 0:
+                    logger.warning("SiteScreenshot ConnectionError for {}. Retrying in 2s...".format(site))
+                    time.sleep(2)
+                    continue
+                else:
+                    logger.warning("SiteScreenshot ConnectionError for {} again. Stop retrying.".format(site))
+                    return
             except Exception as e:
                 logger.warning("SiteScreenshot failed for {}: {}".format(site, e))
                 return

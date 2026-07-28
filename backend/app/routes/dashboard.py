@@ -66,6 +66,8 @@ class DashboardTrend(ARLResource):
         days = []
         assets = []
         vulns = []
+        leaks = []
+        cves = []
         
         for i in range(6, -1, -1):
             target_date = datetime.now().astimezone() - timedelta(days=i)
@@ -82,14 +84,22 @@ class DashboardTrend(ARLResource):
             c_vulns = conn('vuln').count({"save_date": {"$gte": start_dt_str, "$lte": end_dt_str}}) + \
                       conn('nuclei_result').count({"save_date": {"$gte": start_dt_str, "$lte": end_dt_str}})
             
+            # 当日新增 Github 动态
+            c_leaks = conn('github_monitor_result').count({"_id": {"$gte": start_oid, "$lte": end_oid}})
+            c_cves = conn('github_cve_history').count({"_id": {"$gte": start_oid, "$lte": end_oid}})
+            
             days.append(day_str)
             assets.append(c_assets)
             vulns.append(c_vulns)
+            leaks.append(c_leaks)
+            cves.append(c_cves)
             
         data = {
             "days": days,
             "assets": assets,
-            "vulns": vulns
+            "vulns": vulns,
+            "leaks": leaks,
+            "cves": cves
         }
         return utils.build_ret(ErrorMsg.Success, data)
 
@@ -147,7 +157,12 @@ class DashboardSysInfo(ARLResource):
         
         today_github_cves = conn('github_cve_history').count({"_id": {"$gte": today_start_oid}})
         today_github_hackers = conn('github_hackers_history').count({"_id": {"$gte": today_start_oid}})
-        today_github_intel = conn('github_result').count({"_id": {"$gte": today_start_oid}}) + today_github_cves + today_github_hackers
+        today_github_intel_general = conn('github_result').count({"_id": {"$gte": today_start_oid}})
+        today_github_intel = today_github_intel_general + today_github_cves + today_github_hackers
+        
+        total_github_tools = conn('github_tools_target').count({})
+        total_github_hackers = conn('github_hackers_target').count({})
+        total_github_cves = conn('github_cve_history').count({})
         
         data = {
             "cpu_percent": cpu_percent,
@@ -162,6 +177,16 @@ class DashboardSysInfo(ARLResource):
             "github_today": {
                 "leaks": today_github_leaks,
                 "intel": today_github_intel
+            },
+            "github_today_breakdown": {
+                "cves": today_github_cves,
+                "hackers": today_github_hackers,
+                "general": today_github_intel_general
+            },
+            "github_totals": {
+                "cves": total_github_cves,
+                "tools": total_github_tools,
+                "hackers": total_github_hackers
             }
         }
         return utils.build_ret(ErrorMsg.Success, data)

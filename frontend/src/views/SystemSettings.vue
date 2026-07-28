@@ -707,9 +707,11 @@ admin123
             </a-descriptions>
             
             <div style="margin-top: 20px; text-align: center;">
-              <a-button type="primary" size="large" danger @click="startUpdate" :disabled="!hasNewVersion && !forceUpdateMode">
-                一键系统更新
-              </a-button>
+              <a-popconfirm title="此操作将拉取最新镜像并重启系统容器，大概需要几分钟时间，请确认当前无正在执行的重要任务。确定执行更新吗？" @confirm="startUpdate">
+                <a-button type="primary" size="large" danger :loading="updateButtonLoading" :disabled="!hasNewVersion && !forceUpdateMode">
+                  一键系统更新
+                </a-button>
+              </a-popconfirm>
               <div style="margin-top: 10px;">
                 <a-checkbox v-model:checked="forceUpdateMode">强制显示更新按钮</a-checkbox>
               </div>
@@ -722,13 +724,14 @@ admin123
     <!-- 系统更新日志 Modal -->
     <a-modal v-model:open="updateModalVisible" title="系统更新中，请勿关闭页面" :closable="false" :maskClosable="false" :footer="null" width="800px">
       <div style="margin-bottom: 15px;">
-        <a-progress :percent="updateProgress" status="active" />
+        <a-progress :percent="updateProgress" :status="updateHasError ? 'exception' : (updateFinished ? 'success' : 'active')" />
       </div>
       <div style="background-color: #1e1e1e; color: #00ff00; padding: 15px; border-radius: 4px; font-family: 'Consolas', 'Courier New', monospace; height: 400px; overflow-y: auto;" ref="terminalRef">
         <pre style="margin: 0; white-space: pre-wrap; font-family: inherit; color: inherit; background: transparent; border: none; padding: 0;">{{ updateLogs }}</pre>
       </div>
       <div v-if="updateFinished" style="margin-top: 15px; text-align: center;">
-        <a-button type="primary" size="large" @click="reloadPage">🎉 更新完成，点击重新加载页面</a-button>
+        <a-button v-if="!updateHasError" type="primary" size="large" @click="reloadPage">🎉 更新完成，点击重新加载页面</a-button>
+        <a-button v-else type="default" size="large" @click="updateModalVisible = false">关闭窗口</a-button>
       </div>
     </a-modal>
   </div>
@@ -736,7 +739,7 @@ admin123
 
 <script setup>
 import { InfoCircleOutlined, ThunderboltOutlined } from '@ant-design/icons-vue';
-import { ref, reactive, onMounted, computed, nextTick } from 'vue';
+import { ref, reactive, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import { message } from 'ant-design-vue';
 import request from '@/utils/request';
 
@@ -1481,10 +1484,14 @@ const hasNewVersion = ref(false);
 const forceUpdateMode = ref(false);
 
 const updateModalVisible = ref(false);
-const updateLogs = ref([]);
+const updateLogs = ref('');
 const updateProgress = ref(0);
 const updateFinished = ref(false);
 const terminalRef = ref(null);
+const updateButtonLoading = ref(false);
+const updateHasError = ref(false);
+const updateOfflineNotices = ref('');
+const updatePollInterval = ref(null);
 
 const checkVersion = async () => {
   try {
@@ -1493,10 +1500,45 @@ const checkVersion = async () => {
       localVersion.value = res.data.version;
     }
     
+    // 提取并复用检查版本大小的方法
+    const isGreater = (v1, v2) => {
+      const cleanV1 = v1.replace(/^v/, '');
+      const cleanV2 = v2.replace(/^v/, '');
+      
+      const [base1, suffix1] = cleanV1.split('-');
+      const [base2, suffix2] = cleanV2.split('-');
+      
+      const parts1 = base1.split('.').map(Number);
+      const parts2 = base2.split('.').map(Number);
+      
+      for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+        const num1 = parts1[i] || 0;
+        const num2 = parts2[i] || 0;
+        if (num1 > num2) return true;
+        if (num1 < num2) return false;
+      }
+      
+      // 基础版本号相同，比较后缀
+      if (suffix1 && !suffix2) return true;
+      if (!suffix1 && suffix2) return false;
+      
+      if (suffix1 && suffix2) {
+        const num1 = parseInt((suffix1.match(/\d+/) || [0])[0], 10);
+        const num2 = parseInt((suffix2.match(/\d+/) || [0])[0], 10);
+        if (num1 !== num2) return num1 > num2;
+        return suffix1 > suffix2;
+      }
+      
+      return false;
+    };
+
     const ghRes = await fetch('https://api.github.com/repos/owl234/ARL-Next/tags');
     if (ghRes.ok) {
       const ghData = await ghRes.json();
       if (ghData && ghData.length > 0) {
+        // 对 API 返回的标签使用 isGreater 进行降序排序
+        ghData.sort((a, b) => isGreater(a.name, b.name) ? -1 : (isGreater(b.name, a.name) ? 1 : 0));
+        
         remoteVersion.value = ghData[0].name;
         
         // 获取该 tag 对应的 commit 以提取更新日志 (Commit Message)
@@ -1512,38 +1554,6 @@ const checkVersion = async () => {
     }
       
     if (localVersion.value && localVersion.value !== '未知版本' && remoteVersion.value) {
-      // 检查 remote 是否大于 local
-      const isGreater = (v1, v2) => {
-        const cleanV1 = v1.replace(/^v/, '');
-        const cleanV2 = v2.replace(/^v/, '');
-        
-        const [base1, suffix1] = cleanV1.split('-');
-        const [base2, suffix2] = cleanV2.split('-');
-        
-        const parts1 = base1.split('.').map(Number);
-        const parts2 = base2.split('.').map(Number);
-        
-        for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
-          const num1 = parts1[i] || 0;
-          const num2 = parts2[i] || 0;
-          if (num1 > num2) return true;
-          if (num1 < num2) return false;
-        }
-        
-        // 基础版本号相同，比较后缀
-        if (suffix1 && !suffix2) return true;
-        if (!suffix1 && suffix2) return false;
-        
-        if (suffix1 && suffix2) {
-          const num1 = parseInt((suffix1.match(/\d+/) || [0])[0], 10);
-          const num2 = parseInt((suffix2.match(/\d+/) || [0])[0], 10);
-          if (num1 !== num2) return num1 > num2;
-          return suffix1 > suffix2;
-        }
-        
-        return false;
-      };
-      
       hasNewVersion.value = isGreater(remoteVersion.value, localVersion.value);
     }
   } catch (e) {
@@ -1552,18 +1562,24 @@ const checkVersion = async () => {
 };
 
 const startUpdate = async () => {
+  if (updateButtonLoading.value) return;
+  updateButtonLoading.value = true;
   try {
     const res = await request.post('/api/system_config/request_update_token');
     if (res.code !== 200) {
       message.error(res.message || '获取更新令牌失败');
+      updateButtonLoading.value = false;
       return;
     }
     const token = res.data.token;
     
     updateModalVisible.value = true;
+    updateHasError.value = false;
+    updateOfflineNotices.value = '';
     updateLogs.value = '⏳ 正在触发更新服务...\n';
     updateProgress.value = 10;
     updateFinished.value = false;
+    updateButtonLoading.value = false;
     
     // 1. 触发更新
     const triggerUrl = `/update_stream/trigger?token=${token}`;
@@ -1572,22 +1588,34 @@ const startUpdate = async () => {
       if (!triggerRes.ok) {
         updateLogs.value += '[ERROR] 触发更新失败，服务返回异常状态码。\n';
         updateFinished.value = true;
+        updateHasError.value = true;
         return;
       }
     } catch (e) {
       updateLogs.value += '[ERROR] 无法连接到更新服务，请检查网络。\n';
       updateFinished.value = true;
+      updateHasError.value = true;
       return;
     }
 
     // 2. 开始轮询日志
     const pollUrl = `/update_stream/log`;
-    let pollInterval = setInterval(async () => {
+    updatePollInterval.value = setInterval(async () => {
       try {
         const logRes = await fetch(pollUrl);
         if (!logRes.ok) {
+          if (logRes.status === 401) {
+            clearInterval(updatePollInterval.value);
+            updateProgress.value = 100;
+            updateFinished.value = true;
+            updateLogs.value += '\n[DONE] 🎉 系统更新成功！\n🔒 检测到基础安全防护 (Basic Auth) 已生效。\n👉 请手动刷新页面，并在弹出的提示框中输入密码重新登录。';
+            scrollToBottom();
+            message.success('🎉 系统更新成功！请手动刷新页面。', 8);
+            return;
+          }
           // 502 可能是网关重启，不报错，仅记录
-          if (!updateLogs.value.includes('等待网络恢复')) {
+          if (!updateOfflineNotices.value.includes('等待网络恢复')) {
+            updateOfflineNotices.value += '⏳ 网关重启中或服务暂时不可达，正在等待网络恢复...\n';
             updateLogs.value += '⏳ 网关重启中或服务暂时不可达，正在等待网络恢复...\n';
             scrollToBottom();
           }
@@ -1600,25 +1628,32 @@ const startUpdate = async () => {
         if (logText.includes('同步完毕')) updateProgress.value = 50;
         if (logText.includes('开始执行 start-prod.sh')) updateProgress.value = 85;
         
-        if (updateLogs.value !== logText) {
-          updateLogs.value = logText;
+        const combinedLogs = logText + (updateOfflineNotices.value ? '\n' + updateOfflineNotices.value : '');
+        if (updateLogs.value !== combinedLogs) {
+          updateLogs.value = combinedLogs;
           scrollToBottom();
         }
 
         // 检查是否结束
         if (logText.includes('[DONE]')) {
-          clearInterval(pollInterval);
+          clearInterval(updatePollInterval.value);
           updateProgress.value = 100;
           updateFinished.value = true;
+          updateOfflineNotices.value = '';
+          updateLogs.value = logText;
           message.success('🎉 系统更新成功！请点击下方的按钮重新加载页面。', 5);
         } else if (logText.includes('[ERROR]')) {
-          clearInterval(pollInterval);
+          clearInterval(updatePollInterval.value);
           updateFinished.value = true;
+          updateHasError.value = true;
+          updateOfflineNotices.value = '';
+          updateLogs.value = logText;
           message.error('❌ 系统更新遇到错误，请查看日志！', 8);
         }
       } catch (err) {
         // 网络请求失败（容器重启时）忽略错误，继续轮询
-        if (!updateLogs.value.includes('等待容器恢复')) {
+        if (!updateOfflineNotices.value.includes('等待容器恢复')) {
+          updateOfflineNotices.value += '⏳ 网络暂时断开，正在等待容器恢复...\n';
           updateLogs.value += '⏳ 网络暂时断开，正在等待容器恢复...\n';
           scrollToBottom();
         }
@@ -1628,6 +1663,7 @@ const startUpdate = async () => {
   } catch (e) {
     message.error('启动更新失败');
     console.error(e);
+    updateButtonLoading.value = false;
   }
 };
 
@@ -1647,6 +1683,12 @@ onMounted(() => {
   fetchSecurityPolicy();
   fetchPerformanceConfig();
   fetchGeneralConfig();
+});
+
+onUnmounted(() => {
+  if (updatePollInterval.value) {
+    clearInterval(updatePollInterval.value);
+  }
 });
 </script>
 

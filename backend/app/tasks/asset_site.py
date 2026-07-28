@@ -41,15 +41,18 @@ class AssetSiteUpdateTask(CommonTask):
         seen_sites_in_list = set()
         insert_count = 0
 
+        filtered_sites = []
         for site_info in site_info_list:
             curr_site = site_info.get("site")
             if curr_site in existing_sites or curr_site in seen_sites_in_list:
                 continue
             seen_sites_in_list.add(curr_site)
-            
             site_info["task_id"] = self.task_id
-            utils.conn_db('site').insert_one(site_info)
-            insert_count += 1
+            filtered_sites.append(site_info)
+            
+        if filtered_sites:
+            utils.safe_insert_asset_many('site', ['task_id', 'site'], filtered_sites)
+            insert_count += len(filtered_sites)
             
         logger.info("save {} to {}".format(insert_count, self.task_id))
 

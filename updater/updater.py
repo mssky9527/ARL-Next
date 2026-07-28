@@ -31,6 +31,10 @@ class PollingHandler(BaseHTTPRequestHandler):
             self.handle_trigger(parsed_url)
         elif parsed_url.path == "/update/log":
             self.handle_log()
+        elif parsed_url.path == "/update/auth_status":
+            self.handle_auth_status()
+        elif parsed_url.path == "/update/toggle_auth":
+            self.handle_toggle_auth(parsed_url)
         else:
             self.send_response(404)
             self.end_headers()
@@ -86,6 +90,73 @@ class PollingHandler(BaseHTTPRequestHandler):
             content += f"🔄 {layer}: {prog}\n"
             
         self.wfile.write(content.encode('utf-8'))
+
+    def handle_auth_status(self):
+        enabled = True
+        try:
+            result = subprocess.run(["docker", "exec", "arl-frontend-prod", "cat", "/etc/nginx/conf.d/default.conf"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode == 0:
+                content = result.stdout
+                if "auth_basic off;" in content:
+                    enabled = False
+        except Exception:
+            pass
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(json.dumps({"status": "ok", "enabled": enabled}).encode('utf-8'))
+
+    def handle_toggle_auth(self, parsed_url):
+        query_params = parse_qs(parsed_url.query)
+        token = query_params.get("token", [""])[0]
+        enable = query_params.get("enable", ["true"])[0].lower() == "true"
+        
+        if not self.verify_token(token):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(b'{"status": "error", "message": "Invalid token"}')
+            return
+
+        try:
+            subprocess.run(["docker", "exec", "arl-web-prod", "rm", "-f", TOKEN_FILE])
+        except Exception:
+            pass
+
+        try:
+            result = subprocess.run(["docker", "exec", "arl-frontend-prod", "cat", "/etc/nginx/conf.d/default.conf"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if result.returncode == 0:
+                content = result.stdout
+                if enable:
+                    content = re.sub(r'auth_basic\s+off;', 'auth_basic "Restricted Access - AntiScan";', content)
+                else:
+                    content = re.sub(r'auth_basic\s+"Restricted Access - AntiScan";', 'auth_basic off;', content)
+                
+                import uuid
+                # Write back to container
+                temp_conf = f"/tmp/arl_nginx_default_{uuid.uuid4().hex}.conf"
+                with open(temp_conf, "w", encoding="utf-8") as f:
+                    f.write(content)
+                subprocess.run(["docker", "cp", temp_conf, "arl-frontend-prod:/etc/nginx/conf.d/default.conf"])
+                os.remove(temp_conf)
+                
+                # Reload Nginx
+                subprocess.run(["docker", "exec", "arl-frontend-prod", "nginx", "-s", "reload"], check=False)
+                
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ok", "message": "Basic Auth updated successfully", "enabled": enable}).encode('utf-8'))
+            else:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(b'{"status": "error", "message": "Failed to read nginx config from container"}')
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
 
     def log_append(self, text):
         with open(LOG_FILE, 'a', encoding='utf-8') as f:

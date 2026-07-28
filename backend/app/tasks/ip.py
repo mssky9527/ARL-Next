@@ -115,7 +115,7 @@ class IPTask(CommonTask):
 
             # 仅仅资产发现任务将IP全部存储起来
             if self.task_tag == 'task':
-                utils.conn_db('ip').insert_one(ip_info)
+                utils.safe_insert_asset('ip', ['task_id', 'ip'], ip_info)
 
         # 监控任务同步IP信息
         if self.task_tag == 'monitor':
@@ -168,13 +168,15 @@ class IPTask(CommonTask):
                 continue
             ip = target.split(":")[0]
             port = int(target.split(":")[1])
+            cert_data = self.cert_map[target]
             item = {
                 "ip": ip,
                 "port": port,
-                "cert": self.cert_map[target],
+                "cert": cert_data,
                 "task_id": self.task_id,
             }
-            utils.conn_db('cert').insert_one(item)
+            item["cert"]["md5"] = cert_data.get("fingerprint", {}).get("md5")
+            utils.safe_insert_asset('cert', ['task_id', 'ip', 'port'], item)
 
     def save_service_info(self):
         self.service_info_list = []
@@ -202,7 +204,7 @@ class IPTask(CommonTask):
                                                                     'product': _info.get("product"),
                                                                     'version': _info.get("version")})
         if self.service_info_list:
-            utils.conn_db('service').insert(self.service_info_list)
+            utils.safe_insert_asset_many('service', ['task_id', 'service_name'], self.service_info_list)
 
     def npoc_service_detection(self):
         targets = []
@@ -219,7 +221,7 @@ class IPTask(CommonTask):
             self.npoc_service_target_set.add(item["target"])
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
-            utils.conn_db('npoc_service').insert_one(item)
+            utils.safe_insert_asset('npoc_service', ['task_id', 'target'], item)
 
     def brute_config(self):
         plugins = []
@@ -237,7 +239,7 @@ class IPTask(CommonTask):
         for item in result:
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
-            utils.conn_db('vuln').insert_one(item)
+            utils.safe_insert_asset('vuln', ['task_id', 'target', 'plugin_name'], item)
 
     def run(self):
         base_update = self.base_update_task

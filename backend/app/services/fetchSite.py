@@ -227,6 +227,8 @@ class FetchFavicon(object):
         return result
 
     def get_favicon_data(self, favicon_url):
+        if favicon_url.startswith("data:"):
+            return None
         conn = http_req(favicon_url)
         if conn.status_code != 200:
             return

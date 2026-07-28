@@ -52,6 +52,30 @@ def create_index():
         else:
             conn_db(table).create_index(index_map[table])
 
+    # 兜底：创建联合唯一索引，彻底解决极端并发下的重复写入问题
+    unique_indexes = {
+        "site": [("task_id", 1), ("site", 1)],
+        "domain": [("task_id", 1), ("domain", 1)],
+        "ip": [("task_id", 1), ("ip", 1)],
+        "cert": [("task_id", 1), ("ip", 1), ("port", 1)],
+        "service": [("task_id", 1), ("service_name", 1)],
+        "url": [("task_id", 1), ("url", 1)],
+        "fileleak": [("task_id", 1), ("site", 1), ("url", 1)],
+        "npoc_service": [("task_id", 1), ("target", 1)],
+        "vuln": [("task_id", 1), ("vuln_url", 1), ("plugin_name", 1)],
+        "nuclei_result": [("task_id", 1), ("template_id", 1), ("host", 1)],
+        "stat_finger": [("task_id", 1), ("name", 1)],
+        "cip": [("task_id", 1), ("cidr_ip", 1)],
+        "wih": [("task_id", 1), ("site", 1), ("url", 1)]
+    }
+
+    for col, keys in unique_indexes.items():
+        try:
+            conn_db(col).create_index(keys, unique=True, background=True)
+        except Exception as e:
+            import logging
+            logging.getLogger().warning(f"Failed to create unique index on {col}: {e}")
+
 
 def arl_update():
     if is_run_flask_routes():

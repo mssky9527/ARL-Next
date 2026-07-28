@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from .tyc_async import AsyncTycClient
+import re
 
 logger = logging.getLogger(__name__)
 MONGO_URI = "mongodb://admin:admin@mongodb:27017/?authSource=admin"
@@ -179,6 +180,23 @@ async def run_tyc_job(options):
                         for item in invest_list:
                             item['task_id'] = task_id
                             item['query_type'] = 'invest'
+                            
+                            pct = item.get("percent")
+                            if pct and isinstance(pct, str):
+                                try:
+                                    item['percent_num'] = float(pct.replace("%", "").strip())
+                                except ValueError:
+                                    pass
+                            
+                            rc = item.get("regCapital")
+                            if rc and isinstance(rc, str):
+                                m = re.search(r"(\d+(\.\d+)?)", rc.replace(",", ""))
+                                if m:
+                                    try:
+                                        item['regCapital_num'] = float(m.group(1))
+                                    except ValueError:
+                                        pass
+                                        
                             await db['icp_asset'].insert_one(item)
                             next_gids.append(item.get("id"))
                         counts["invest"] += len(invest_list)

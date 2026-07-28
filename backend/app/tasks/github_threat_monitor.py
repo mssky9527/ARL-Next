@@ -38,10 +38,14 @@ class GithubCveMonitorTask:
         try:
             url = f"https://cve.mitre.org/cgi-bin/cvename.cgi?name={cve_id}"
             res = utils.http_req(url, timeout=(10, 10))
-            if res:
+            if res and res.text:
                 html = etree.HTML(res.text)
-                des = html.xpath('//*[@id="GeneratedTable"]/table//tr[4]/td/text()')[0].strip()
-                return des
+                if html is not None:
+                    elements = html.xpath('//*[@id="GeneratedTable"]/table//tr[4]/td/text()')
+                    if elements:
+                        des = elements[0].strip()
+                        if des:
+                            return des
         except Exception as e:
             logger.warning(f"Fetch MITRE desc failed for {cve_id}: {e}")
         return "No description available on MITRE yet."
@@ -49,7 +53,7 @@ class GithubCveMonitorTask:
     def run(self):
         logger.info("Starting Github CVE Monitor Task...")
         year = datetime.datetime.now().year
-        today_date = str(datetime.date.today())
+        utc_now = datetime.datetime.utcnow()
         api = f"https://api.github.com/search/repositories?q=CVE-{year}&sort=updated&per_page=100"
         
         try:
@@ -68,37 +72,44 @@ class GithubCveMonitorTask:
                     continue
                     
                 cve_id = cve_match[0]
-                pushed_at = ""
+                pushed_at_str = item.get('pushed_at', '')
                 try:
-                    pushed_at = re.findall(r'\d{4}-\d{2}-\d{2}', item.get('pushed_at', ''))[0]
-                except:
+                    pushed_at_dt = datetime.datetime.strptime(pushed_at_str, "%Y-%m-%dT%H:%M:%SZ")
+                    # 转换为北京时间 (UTC+8) 存入数据库
+                    pushed_at_local_dt = pushed_at_dt + datetime.timedelta(hours=8)
+                    pushed_at_date = pushed_at_local_dt.strftime("%Y-%m-%d")
+                except ValueError:
                     continue
                 repo_url = item['html_url']
 
-                if pushed_at != today_date:
+                # 仅处理最近24小时内更新的仓库（彻底解决跨时区问题）
+                if (utc_now - pushed_at_dt).total_seconds() > 24 * 3600:
                     continue
 
-                if db.find_one({"cve_name": cve_id}):
-                    continue 
-                
-                logger.info(f"New CVE found: {cve_id}")
-                cve_desc = self.fetch_mitre_cve_desc(cve_id)
-                
-                title = f"🚨 发现新公开的 {cve_id} Github 利用代码！"
-                body = (
-                    f"**CVE 编号**: {cve_id}\n"
-                    f"**项目地址**: {repo_url}\n"
-                    f"**官方描述**: \n{cve_desc}\n"
+                # Use upsert to prevent race conditions
+                result = db.update_one(
+                    {"cve_name": cve_id},
+                    {"$setOnInsert": {
+                        "cve_name": cve_id,
+                        "cve_url": repo_url,
+                        "pushed_at": pushed_at_date,
+                        "insert_time": utils.curr_date()
+                    }},
+                    upsert=True
                 )
-                ThreatIntelligencePush.push_msg(title, body)
-
-                db.insert_one({
-                    "cve_name": cve_id,
-                    "cve_url": repo_url,
-                    "pushed_at": today_date,
-                    "desc": cve_desc,
-                    "insert_time": utils.curr_date()
-                })
+                
+                if result.upserted_id is not None:
+                    logger.info(f"New CVE found: {cve_id}")
+                    cve_desc = self.fetch_mitre_cve_desc(cve_id)
+                    db.update_one({"_id": result.upserted_id}, {"$set": {"desc": cve_desc}})
+                    
+                    title = f"🚨 发现新公开的 {cve_id} Github 利用代码！"
+                    body = (
+                        f"**CVE 编号**: {cve_id}\n"
+                        f"**项目地址**: {repo_url}\n"
+                        f"**官方描述**: \n{cve_desc}\n"
+                    )
+                    ThreatIntelligencePush.push_msg(title, body)
                 
         except Exception as e:
             logger.exception(f"GithubCveMonitorTask Error: {e}")
@@ -125,14 +136,22 @@ class GithubToolsMonitorTask:
                     latest = res.json()[0]
                     new_tag = latest.get('tag_name', '')
                     try:
-                        new_pushed_at = re.findall(r'\d{4}-\d{2}-\d{2}', latest.get('published_at', ''))[0]
-                    except:
+                        published_at_str = latest.get('published_at', '')
+                        published_at_dt = datetime.datetime.strptime(published_at_str, "%Y-%m-%dT%H:%M:%SZ")
+                        published_at_local_dt = published_at_dt + datetime.timedelta(hours=8)
+                        new_pushed_at = published_at_local_dt.strftime("%Y-%m-%d")
+                    except Exception:
                         new_pushed_at = ""
                     
                     old_tag = target.get('last_tag', '')
                     if new_tag != old_tag:
-                        # 只有非首次监控（old_tag不为空）时，才推送更新通知
-                        if old_tag != '':
+                        # Atomically update to ensure only one thread pushes the notification
+                        result = db.update_one(
+                            {"_id": target["_id"], "last_tag": old_tag},
+                            {"$set": {"last_tag": new_tag, "last_commit_time": new_pushed_at}}
+                        )
+                        
+                        if result.modified_count > 0 and old_tag != '':
                             update_log = latest.get('body', 'No update log provided.')
                             download_url = latest.get('html_url')
                             tool_name = repo_url.split('/')[-1]
@@ -141,9 +160,6 @@ class GithubToolsMonitorTask:
                             body = f"**地址**: {download_url}\n**更新日志**:\n{update_log}"
                             
                             ThreatIntelligencePush.push_msg(title, body)
-                            
-                        # 无论是否首次，都更新数据库记录为最新版本
-                        db.update_one({"_id": target["_id"]}, {"$set": {"last_tag": new_tag, "last_commit_time": new_pushed_at}})
             except Exception as e:
                 logger.error(f"Failed to check tool {repo_url}: {e}")
 
@@ -158,7 +174,7 @@ class GithubHackersMonitorTask:
         history_db = utils.conn_db(self.history_collection)
         
         targets = list(db.find({}))
-        today_date = str(datetime.date.today())
+        utc_now = datetime.datetime.utcnow()
         
         for target in targets:
             github_id = target.get('github_id')
@@ -179,11 +195,27 @@ class GithubHackersMonitorTask:
                         created_at_raw = repo.get('created_at', '')
                         if not created_at_raw: continue
                         
-                        created_at = re.findall(r'\d{4}-\d{2}-\d{2}', created_at_raw)
-                        if created_at and created_at[0] == today_date and not fork:
+                        try:
+                            created_at_dt = datetime.datetime.strptime(created_at_raw, "%Y-%m-%dT%H:%M:%SZ")
+                        except ValueError:
+                            continue
+                            
+                        # 仅处理最近24小时内创建的仓库（解决时区导致的部分时段遗漏）
+                        is_recent = (utc_now - created_at_dt).total_seconds() <= 24 * 3600
+                        
+                        if is_recent and not fork:
                             full_name = repo.get('full_name')
-                            # 检查是否已推送
-                            if not history_db.find_one({"full_name": full_name}):
+                            # 检查是否已推送并原子插入
+                            result = history_db.update_one(
+                                {"full_name": full_name},
+                                {"$setOnInsert": {
+                                    "full_name": full_name,
+                                    "insert_time": utils.curr_date()
+                                }},
+                                upsert=True
+                            )
+                            
+                            if result.upserted_id is not None:
                                 name = repo.get('name')
                                 description = repo.get('description') or "作者未写描述"
                                 download_url = repo.get('html_url')
@@ -195,52 +227,48 @@ class GithubHackersMonitorTask:
                                     f"**工具描述**: {description}\n"
                                 )
                                 ThreatIntelligencePush.push_msg(title, body)
-                                
-                                history_db.insert_one({
-                                    "full_name": full_name,
-                                    "insert_time": utils.curr_date()
-                                })
             except Exception as e:
                 logger.error(f"Failed to check hacker {github_id}: {e}")
 
 import time
-LAST_RUN = {
-    "cve": 0,
-    "tools": 0,
-    "hackers": 0
-}
 
 def threat_intelligence_scheduler():
     now = time.time()
+    db = utils.conn_db("system_config")
+    
     # CVE 抓取频率通过 DB 动态配置
-    conf = utils.conn_db("system_config").find_one({"_id": "cve_radar_config"}) or {"enabled": False, "interval": 6}
+    conf = db.find_one({"_id": "cve_radar_config"}) or {"enabled": False, "interval": 6}
     if conf.get("enabled", False):
         cve_interval_hours = conf.get("interval", 6)
-        if now - LAST_RUN["cve"] > 3600 * cve_interval_hours:
+        last_run = conf.get("last_run_time", 0)
+        if now - last_run > 3600 * cve_interval_hours:
             try:
                 GithubCveMonitorTask().run()
+                db.update_one({"_id": "cve_radar_config"}, {"$set": {"last_run_time": now}}, upsert=True)
             except Exception as e:
                 logger.error(f"CVE schedule error: {e}")
-            LAST_RUN["cve"] = now
         
     # Tools 抓取频率通过 DB 动态配置
-    tools_conf = utils.conn_db("system_config").find_one({"_id": "tools_radar_config"}) or {"enabled": False, "interval": 6}
+    tools_conf = db.find_one({"_id": "tools_radar_config"}) or {"enabled": False, "interval": 6}
     if tools_conf.get("enabled", False):
         tools_interval_hours = tools_conf.get("interval", 6)
-        if now - LAST_RUN["tools"] > 3600 * tools_interval_hours:
+        last_run = tools_conf.get("last_run_time", 0)
+        if now - last_run > 3600 * tools_interval_hours:
             try:
                 GithubToolsMonitorTask().run()
+                db.update_one({"_id": "tools_radar_config"}, {"$set": {"last_run_time": now}}, upsert=True)
             except Exception as e:
                 logger.error(f"Tools schedule error: {e}")
-            LAST_RUN["tools"] = now
 
     # Hackers 抓取频率通过 DB 动态配置
-    hackers_conf = utils.conn_db("system_config").find_one({"_id": "hackers_radar_config"}) or {"enabled": False, "interval": 6}
+    hackers_conf = db.find_one({"_id": "hackers_radar_config"}) or {"enabled": False, "interval": 6}
     if hackers_conf.get("enabled", False):
         hackers_interval_hours = hackers_conf.get("interval", 6)
-        if now - LAST_RUN["hackers"] > 3600 * hackers_interval_hours:
+        last_run = hackers_conf.get("last_run_time", 0)
+        if now - last_run > 3600 * hackers_interval_hours:
             try:
                 GithubHackersMonitorTask().run()
+                db.update_one({"_id": "hackers_radar_config"}, {"$set": {"last_run_time": now}}, upsert=True)
             except Exception as e:
                 logger.error(f"Hackers schedule error: {e}")
-            LAST_RUN["hackers"] = now
+
