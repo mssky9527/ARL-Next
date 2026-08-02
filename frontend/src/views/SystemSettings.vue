@@ -742,11 +742,13 @@ import { InfoCircleOutlined, ThunderboltOutlined } from '@ant-design/icons-vue';
 import { ref, reactive, onMounted, onUnmounted, computed, nextTick } from 'vue';
 import { message } from 'ant-design-vue';
 import request from '@/utils/request';
+import { useRoute } from 'vue-router';
 
 const reloadPage = () => {
   window.location.reload();
 };
 
+const route = useRoute();
 const activeKey = ref('dictionary');
 const loading = ref(false);
 const searchLoading = ref(false);
@@ -1626,7 +1628,7 @@ const startUpdate = async () => {
         // 解析进度，简单计算进度条
         if (logText.includes('后台任务已启动')) updateProgress.value = 20;
         if (logText.includes('同步完毕')) updateProgress.value = 50;
-        if (logText.includes('开始执行 start-prod.sh')) updateProgress.value = 85;
+        if (logText.includes('开始执行 start-')) updateProgress.value = 85;
         
         const combinedLogs = logText + (updateOfflineNotices.value ? '\n' + updateOfflineNotices.value : '');
         if (updateLogs.value !== combinedLogs) {
@@ -1676,6 +1678,9 @@ const scrollToBottom = () => {
 };
 
 onMounted(() => {
+  if (route.query.tab) {
+    activeKey.value = route.query.tab;
+  }
   checkVersion();
   fetchDictList();
   fetchBruteDictList();

@@ -110,23 +110,24 @@ services:
   # MongoDB 数据库 (去除了 ports "27018:27017" 的外网暴露)
   mongodb:
     <<: *default-logging
-    image: crpi-laul1izptqrf0tkf.cn-beijing.personal.cr.aliyuncs.com/owl234-arl-prod/mongo:4.0.27
+    image: crpi-laul1izptqrf0tkf.cn-beijing.personal.cr.aliyuncs.com/owl234-arl-prod/mongo:7.0
     container_name: arl-mongodb-prod
     restart: always
+    command: ["--wiredTigerCacheSizeGB", "1"]
     environment:
       - MONGO_INITDB_DATABASE=arl
       - MONGO_INITDB_ROOT_USERNAME=admin
       - MONGO_INITDB_ROOT_PASSWORD=admin
       - TZ=Asia/Shanghai
     volumes:
-      - mongo_data:/data/db
+      - mongo_data_v7:/data/db
     networks:
       - arl-net
 
   # RabbitMQ 队列 (去除了 ports "5673:5672" 和 "15673:15672" 的外网暴露)
   rabbitmq:
     <<: *default-logging
-    image: crpi-laul1izptqrf0tkf.cn-beijing.personal.cr.aliyuncs.com/owl234-arl-prod/rabbitmq:3-management
+    image: crpi-laul1izptqrf0tkf.cn-beijing.personal.cr.aliyuncs.com/owl234-arl-prod/rabbitmq:3-alpine
     container_name: arl-rabbitmq-prod
     restart: always
     environment:
@@ -167,7 +168,7 @@ networks:
     driver: bridge
 
 volumes:
-  mongo_data:
+  mongo_data_v7:
   rabbitmq_data:
   arl_screenshots:
   arl_poc_plugins:

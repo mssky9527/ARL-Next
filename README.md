@@ -13,7 +13,7 @@
 
   <p>
     <a href="https://hub.docker.com/"><img src="https://img.shields.io/badge/docker-ready-blue.svg?style=flat-square&logo=docker" alt="Docker"></a>
-    <img src="https://img.shields.io/badge/python-3.8%2B-blue?style=flat-square&logo=python" alt="Python">
+    <img src="https://img.shields.io/badge/python-3.13%2B-blue?style=flat-square&logo=python" alt="Python">
     <img src="https://img.shields.io/badge/node.js-18%2B-green?style=flat-square&logo=node.js" alt="Node.js">
     <img src="https://img.shields.io/badge/vue-3.x-4fc08d?style=flat-square&logo=vuedotjs" alt="Vue">
     <img src="https://img.shields.io/badge/MCP-Ready-purple?style=flat-square" alt="MCP">
@@ -35,12 +35,13 @@
 * **🌐 资产闭环**：集成 ICP 与天眼查，全自动挖掘企业多维资产。
 * **🛡️ 威胁情报**：内置 GitHub 监控雷达，实时追踪最新 CVE 与代码泄露。
 * **⚡ 极简运维**：提供 2 分钟极速部署包，支持 Web 端平滑热更新与 Basic Auth 前置防御。
+* **🇨🇳 国内特化**：针对国内网络深度优化，直连阿里云预构建镜像，彻底根绝 GFW 阻断与依赖下载失败问题。
 
 <details>
 <summary><b>🤔 对比原版 ARL 解决了哪些痛点？</b></summary>
 
 1. **解决任务假死**：高耗能截图与 OSINT 独立成微服务集群，主节点不再阻塞。
-2. **告别部署地狱**：直连国内预构建镜像，避开网络阻断，开箱即用。
+2. **告别编译与臃肿**：引入 `uv` 极速包管理与 Docker 多阶段构建，彻底剥离底层 C 编译链，镜像体积锐减且杜绝了依赖报错。
 3. **重构技术底座**：前端升级 Vue3，后端重写高并发数据库索引，清剿数十项深层 Bug。
 4. **增强反爬伪装**：升级特征隐藏机制，大幅降低被 WAF 封禁的概率。
 </details>
@@ -100,6 +101,7 @@ graph TD
     Workers --> OSINT["🧩 OSINT 情报微服务"]
     Workers --> Puppeteer["🧩 Puppeteer 截图微服务"]
     Workers --> Nuclei["🔥 Nuclei 扫描与爬虫引擎"]
+    Autoheal["🛡️ Autoheal 自愈守护"] -.->|监控探活| Workers
     
     classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px;
     classDef core fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
@@ -109,10 +111,10 @@ graph TD
 ### 核心模块解析：
 
 1. 🖥️ **展示层 (Frontend)**：基于 **Vue 3.5** + **Vite 5.4** 构建，生产环境由 **Nginx** 托管，提供 HTTPS 安全网关与 **Basic Auth 前置防御**。
-2. ⚙️ **业务 API 层 (Backend)**：基于 **Python 3.8+** 与 **Flask**，处理核心业务逻辑与 JWT 鉴权。
+2. ⚙️ **业务 API 层 (Backend)**：基于 **Python 3.13+** 与 **Flask**，处理核心业务逻辑与 JWT 鉴权。
 3. 🤖 **AI 扩展层 (MCP Server)**：*(新!)* 独立集成 **Model Context Protocol** 服务，赋能外部 AI 大模型/Agent 直接接入并调度底层检索工具。
 4. ⚡ **消息与执行层 (Broker & Workers)**：采用 **RabbitMQ** + **Celery** 分布式集群，高效解耦调度 **Nuclei** 扫描与威胁监控等高并发任务。
-5. 🗄️ **数据存储 (Database)**：基于 **MongoDB**，承载千万级大宽表资产数据与漏洞结果落地。
+5. 🗄️ **数据存储 (Database)**：基于 **MongoDB 7.0**，承载千万级大宽表资产数据与漏洞结果落地。
 6. 🧩 **扩展微服务群 (Microservices)**：*(新!)* 包含 Node.js Puppeteer 渲染容器与 OSINT 情报容器，专职无头渲染与异步信息收集，彻底消除主节点任务阻塞。
 
 ---
@@ -130,6 +132,7 @@ graph TD
 * **🛡️ 极致防护**：自动签发 SSL 并强制生成 **Basic Auth 前置拦截**，核心组件全内网隔离。
 * **🔄 平滑热更**：支持从 Web 端一键平滑重启升级，彻底免去 SSH 登录。
 * **🩺 智能就绪检测**：内置 API 健康轮询机制，确保服务 100% 启动后无缝访问，告别 502 报错。
+* **🚀 性能调优**：Nginx 深度定制，强制开启 Gzip 压缩拦截大文件明文传输，带宽消耗锐减，前端秒级响应。
 
 #### 🚀 部署方式选择
 
@@ -144,7 +147,7 @@ apt-get update && apt-get install -y docker.io docker-compose-v2 openssl curl &&
 mkdir -p ~/ARL-Next && cd ~/ARL-Next && \
 # 3. 从阿里云公开仓库拉取最新镜像
 docker pull crpi-laul1izptqrf0tkf.cn-beijing.personal.cr.aliyuncs.com/owl234-arl-prod/arl-web:latest && \
-# 4. 创建临时容器以提取部署所需配置
+# 4. 核心黑科技：绕过 GFW 网络阻断，直接从镜像中提取全套部署配置
 docker rm -f arl-temp 2>/dev/null || true && \
 docker create --name arl-temp crpi-laul1izptqrf0tkf.cn-beijing.personal.cr.aliyuncs.com/owl234-arl-prod/arl-web:latest && \
 docker cp arl-temp:/code/start-prod.sh ./ && \
@@ -164,6 +167,8 @@ bash start-prod.sh
 > 该方法极度依赖对 Github 的网络连通性。如果 `git clone` 卡住，国内机器请务必使用 **方法一** 或手动下载源码 Zip 包上传。
 
 若网络允许，可直接拉取源码运行：
+
+> 💡 **提示**：`start-prod.sh` 内置了全套环境探针。即使是全新的裸机，脚本也会自动检测并安装 Docker 等基础依赖，全程无需人工干预。
 
 ```bash
 git clone --depth 1 https://github.com/owl234/ARL-Next.git && cd ARL-Next
@@ -207,19 +212,6 @@ bash start-dev.sh
 > * **双端热重载**：后端修改本地代码保存即生效，前端 Vite 实时热重载。
 > * **API与安全**：后端接口暴露于 `5001` 端口；若需开启 HTTPS，请将自签证书放至 `certs/` 目录。
 
-#### 🛠️ 常用容器命令
-
-```bash
-# 查看后端组件状态
-docker compose -f docker-compose.dev.yml ps
-
-# 查看后端实时日志流
-docker compose -f docker-compose.dev.yml logs -f
-
-# 停止并销毁开发环境容器
-docker compose -f docker-compose.dev.yml down
-```
-
 ---
 
 ## 🗄️ 数据库直连 (开发环境专用)
@@ -230,7 +222,7 @@ docker compose -f docker-compose.dev.yml down
 | :--- | :--- | :--- | :--- | :--- |
 | **🍃 MongoDB** | `mongodb://admin:admin@127.0.0.1:27018/arl?authSource=admin` | `admin` | `admin` | DB 读写直连 |
 | **🐇 RabbitMQ** | `http://127.0.0.1:15673` | `admin` | `admin` | Web 管理后台 |
-| **🐇 RabbitMQ** | `127.0.0.1:5673` | - | - | AMQP 协议端口 |
+| **🐇 RabbitMQ** | `127.0.0.1:5673` | `admin` | `admin` | AMQP 协议端口 |
 
 ---
 
@@ -253,7 +245,17 @@ sudo systemctl restart arl-updater.service
 ## 📜 版本更新历史
 
 <details open>
-<summary><b>🚀 v1.1.7 (当前版本)</b></summary><br/>
+<summary><b>🚀 v1.1.8 (当前版本)</b></summary><br/>
+
+* **架构跃升**：核心运行环境全面跨代至 **Python 3.13** 与 **MongoDB 7.0**。新增 `upgrade-mongo.sh` 自动化脚本，实现数据库大版本的无损平滑迁移。
+* **内存治理**：引入极限防 OOM 机制。切换 RabbitMQ 为 Alpine 镜像，限制 MongoDB 最大内存池为 1GB；导出引擎重构为 `$group` 流式处理，彻底杜绝海量资产溢出。
+* **CI/CD 重构**：全线引入 Docker 多阶段构建与 `uv` 极速包管理器，大幅缩减镜像体积。补全自动发版流，实现海外预构建镜像后直推国内阿里云私库。
+* **稳定与安全**：底层引入 `contextvars` 根治异步任务上下文丢失；修复 `InfoHunter` 外部命令注入隐患；重构适配 `urllib3` 废弃 `get_host` 后的兼容性崩溃。
+* **指纹与交互**：扩充 Vite、React、TOS 等现代 Web 指纹，站点监控新增 `body_length` 异动感知。前端新增 CIDR 气泡悬浮组件以优化聚合视图，MCP 新增 `asset_wih` 调度。
+</details>
+
+<details>
+<summary><b>v1.1.7</b></summary><br/>
 
 * **核心底座**：重构数据库落库机制，全面引入 `bulk_write` 与批量入库，为13张核心资产表增加联合唯一索引，彻底杜绝极端并发下的数据冗余，大幅提升大任务流性能。
 * **网络引擎**：重构底层网络请求工具，引入自适应连接池及 10MB 响应截断保护机制，有效防止因恶意站点超大返回包导致的内存泄漏与任务假死。
@@ -357,7 +359,7 @@ sudo systemctl restart arl-updater.service
 本项目站在巨人的肩膀上，特此鸣谢以下项目与团队：
 
 * **核心架构**：基于原版 [ARL 灯塔](https://github.com/TophantTechnology/ARL) 重构，并参考了 [Aabyss-Team/ARL](https://github.com/Aabyss-Team/ARL) 与 [adysec/ARL](https://github.com/adysec/ARL) 等优秀衍生版。
-* **指纹引擎**：感谢 **威零安全团队** (<img src="img/weiling.jpg" width="18" height="18" align="absmiddle" /> 公众号) 提供的万级高质量指纹数据支撑。
+* **指纹引擎**：感谢 **威零安全团队** (<img src="./img/weiling.jpg" width="18" height="18" align="absmiddle" /> 公众号) 提供的万级高质量指纹数据支撑。
 * **功能模块**：企业资产查询深度借鉴了 [ICP_Query](https://github.com/HG-ha/ICP_Query)，威胁监控模块汲取了 [github-cve-monitor](https://github.com/yhy0/github-cve-monitor) 的设计思路。
 
 ARL-Next 将秉持开源互助的初心，持续为信息安全社区贡献力量！

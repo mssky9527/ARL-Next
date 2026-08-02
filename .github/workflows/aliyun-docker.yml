@@ -11,40 +11,46 @@ env:
   ALIYUN_NAMESPACE: owl234-arl-prod
 
 jobs:
-  build-and-push:
+  push-official-images:
+    if: github.repository == 'owl234/ARL-Next'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Login to Aliyun Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.ALIYUN_REGISTRY }}
           username: ${{ secrets.ALIYUN_REGISTRY_USER }}
           password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
-
       - name: Pull and Push Official Images
         run: |
-          # Pull official images, tag them for Aliyun, and push
-          docker pull mongo:4.0.27
-          docker tag mongo:4.0.27 ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/mongo:4.0.27
-          docker push ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/mongo:4.0.27
+          docker pull mongo:7.0
+          docker tag mongo:7.0 ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/mongo:7.0
+          docker push ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/mongo:7.0
           
-          docker pull rabbitmq:3-management
-          docker tag rabbitmq:3-management ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/rabbitmq:3-management
-          docker push ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/rabbitmq:3-management
+          docker pull rabbitmq:3-alpine
+          docker tag rabbitmq:3-alpine ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/rabbitmq:3-alpine
+          docker push ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/rabbitmq:3-alpine
 
           docker pull willfarrell/autoheal:latest
           docker tag willfarrell/autoheal:latest ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/autoheal:latest
           docker push ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/autoheal:latest
 
+  build-frontend:
+    if: github.repository == 'owl234/ARL-Next'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Aliyun Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_REGISTRY_USER }}
+          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
       - name: Build and push Frontend
         uses: docker/build-push-action@v6
         with:
@@ -56,13 +62,28 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  build-web-worker:
+    if: github.repository == 'owl234/ARL-Next'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
       - name: Pre-build check for critical deployment files
         run: |
-          if ! grep -q "COPY ./version.txt ./start-prod.sh ./docker-compose.prod.yml" Dockerfile.prod; then
+          if ! grep -q "COPY ./version.txt ./start-prod.sh ./docker-compose.prod.yml /code/" Dockerfile.prod; then
             echo "::error::Dockerfile.prod is missing the critical COPY instruction for deployment scripts. This will break the domestic one-click deployment!"
             exit 1
           fi
-
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Aliyun Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_REGISTRY_USER }}
+          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
       - name: Build and push Web and Worker
         uses: docker/build-push-action@v6
         with:
@@ -76,6 +97,22 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  build-puppeteer:
+    if: github.repository == 'owl234/ARL-Next'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Aliyun Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_REGISTRY_USER }}
+          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
       - name: Build and push Puppeteer Service
         uses: docker/build-push-action@v6
         with:
@@ -87,6 +124,22 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  build-osint:
+    if: github.repository == 'owl234/ARL-Next'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to Aliyun Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_REGISTRY_USER }}
+          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
       - name: Build and push OSINT Service
         uses: docker/build-push-action@v6
         with:

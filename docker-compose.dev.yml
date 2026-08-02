@@ -68,7 +68,7 @@ services:
       - osint-service
 
   mongodb:
-    image: mongo:4.0.27
+    image: mongo:7.0
     container_name: arl_mongodb_dev
     restart: always
     ports:

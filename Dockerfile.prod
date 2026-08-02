@@ -1,17 +1,17 @@
-# 阶段一：Builder（编译环境）
-# 恢复使用完整的 debian:bookworm 作为构建器，确保 100% 还原最初成功的编译环境
-FROM debian:bookworm AS builder
+# 阶段一：C语言生态编译环境 (完全保留 debian:bookworm，避免跨版本 C 编译报错)
+FROM debian:bookworm AS builder-c
 
 ARG TARGETARCH
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1. 安装编译所需的全部依赖 (一字不差地还原原版单阶段时的依赖列表，彻底杜绝编译期由于环境差异导致的莫名其妙的 exit code 2)
+# 1. 安装编译所需的全部依赖 (一字不差地还原原版单阶段时的依赖列表)
 RUN apt-get update -o Acquire::Retries=10 && \
     apt-get install -y --no-install-recommends \
     wget unzip bzip2 git curl tzdata \
     ca-certificates make gcc g++ \
     automake autoconf libtool python3-dev \
     libxml2-dev libxslt1-dev zlib1g-dev libffi-dev libssl-dev \
+    libpcap-dev libssh2-1-dev \
     python3 python3-pip python3-venv && \
     rm -rf /var/lib/apt/lists/*
 
@@ -21,13 +21,8 @@ RUN cd /tmp && \
     tar xvf v1.1.0.tar.gz && cd massdns-1.1.0 && make -j$(nproc) && \
     cp bin/massdns /usr/local/bin/massdns && cd /tmp && rm -rf massdns*
 
-# 3. 编译 Nmap (完全复刻原版命令)
-RUN cd /tmp && \
-    wget https://nmap.org/dist/nmap-7.95.tar.bz2 && \
-    bzip2 -cd nmap-7.95.tar.bz2 | tar xvf - && cd nmap-7.95 && \
-    ./configure --without-zenmap && make -j$(nproc) && make install && \
-    strip -s /usr/local/bin/nmap /usr/local/bin/ncat /usr/local/bin/nping /usr/local/bin/massdns || true && \
-    cd /tmp && rm -rf nmap* && \
+# 3. Nmap 采用 apt-get 安装，避免在 ARM 宿主机上通过 QEMU 交叉编译 C++ 导致的崩溃
+RUN mkdir -p /usr/local/share/nmap && \
     (wget -O /usr/local/share/nmap/nmap-service-probes https://fastly.jsdelivr.net/gh/nmap/nmap@master/nmap-service-probes || wget -O /usr/local/share/nmap/nmap-service-probes https://gh-proxy.com/https://raw.githubusercontent.com/nmap/nmap/master/nmap-service-probes)
 
 # 4. 下载 Nuclei 并预热模板
@@ -37,7 +32,8 @@ RUN ARCH=$(dpkg --print-architecture) && \
     unzip $NUCLEI_ZIP && mv nuclei /usr/local/bin/ && \
     /usr/local/bin/nuclei -update-templates || true
 
-# 5. 构建 Python 虚拟环境 (引入 uv 极速安装)
+# 阶段二：Python生态编译环境 (彻底剥离 C 编译，专精 pip 安装)
+FROM python:3.13-bookworm AS builder-py
 WORKDIR /code
 COPY ./backend/requirements.txt /code/backend/requirements.txt
 COPY ./backend/ARL-NPoC /code/backend/ARL-NPoC
@@ -53,31 +49,29 @@ RUN python3 -m venv $VIRTUAL_ENV && \
 
 
 #########################################
-# 阶段二：Final（生产运行环境）
-FROM debian:bookworm-slim
+# 阶段三：Final（生产运行环境）
+FROM python:3.13-slim-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 ENV NODE_PATH=/usr/local/lib/node_modules
 
-# 1. 仅安装生产运行所需的必要库，彻底排除编译工具
+# 1. 仅安装生产运行所需的必要库
 RUN apt-get update -o Acquire::Retries=10 && \
     apt-get install -y --no-install-recommends \
     wget curl tzdata ca-certificates \
-    python3 libssl3 libxml2 libxslt1.1 zlib1g libffi8 && \
+    libssl3 libxml2 libxslt1.1 zlib1g libffi8 nmap && \
     rm -rf /var/lib/apt/lists/* && \
     rm -rf /usr/share/doc/* /usr/share/man/* /usr/share/locale/*
+
 # 2. 从 builder 层拉取二进制文件和虚拟环境
-COPY --from=builder /usr/local/bin/massdns \
+# 注意：剥离已过时且编译易错的 ndiff 和 nping
+COPY --from=builder-c /usr/local/bin/massdns \
                     /usr/local/bin/nuclei \
-                    /usr/local/bin/nmap \
-                    /usr/local/bin/ncat \
-                    /usr/local/bin/ndiff \
-                    /usr/local/bin/nping \
                     /usr/local/bin/
-COPY --from=builder /usr/local/share/nmap /usr/local/share/nmap
-COPY --from=builder /code/backend/.venv-docker /code/backend/.venv-docker
-COPY --from=builder /root/nuclei-templates /root/nuclei-templates
+COPY --from=builder-c /usr/local/share/nmap /usr/local/share/nmap
+COPY --from=builder-py /code/backend/.venv-docker /code/backend/.venv-docker
+COPY --from=builder-c /root/nuclei-templates /root/nuclei-templates
 
 # 3. 拷贝源码
 WORKDIR /code

@@ -50,6 +50,7 @@ server {
 
     # 2. 动态 API 反向代理
     location /api/ {
+        auth_basic off;
         proxy_pass http://arl-web:5000/api/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

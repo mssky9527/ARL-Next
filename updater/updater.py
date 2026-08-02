@@ -97,7 +97,7 @@ class PollingHandler(BaseHTTPRequestHandler):
             result = subprocess.run(["docker", "exec", "arl-frontend-prod", "cat", "/etc/nginx/conf.d/default.conf"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             if result.returncode == 0:
                 content = result.stdout
-                if "auth_basic off;" in content:
+                if re.search(r'# 开启 HTTP Basic Auth 阻挡被动扫描\\s*auth_basic\\s+off;', content):
                     enabled = False
         except Exception:
             pass
@@ -129,9 +129,12 @@ class PollingHandler(BaseHTTPRequestHandler):
             if result.returncode == 0:
                 content = result.stdout
                 if enable:
-                    content = re.sub(r'auth_basic\s+off;', 'auth_basic "Restricted Access - AntiScan";', content)
+                    content = re.sub(r'(# 开启 HTTP Basic Auth 阻挡被动扫描\s*)auth_basic\s+off;', r'\1auth_basic "Restricted Access - AntiScan";', content)
                 else:
-                    content = re.sub(r'auth_basic\s+"Restricted Access - AntiScan";', 'auth_basic off;', content)
+                    content = re.sub(r'(# 开启 HTTP Basic Auth 阻挡被动扫描\s*)auth_basic\s+"Restricted Access - AntiScan";', r'\1auth_basic off;', content)
+                
+                # 安全修复：确保 API 接口不会被意外锁定
+                content = re.sub(r'(location\s+/api/\s*\{\s*)auth_basic\s+"Restricted Access - AntiScan";', r'\1auth_basic off;', content)
                 
                 import uuid
                 # Write back to container
