@@ -4,6 +4,8 @@ from bson import ObjectId
 from app import utils
 from app import services
 from app.config import Config
+from contextlib import contextmanager
+import traceback
 from app.modules import CollectSource, WebSiteFetchStatus, WebSiteFetchOption
 from app.services.nuclei_scan import nuclei_scan
 from app.services import run_risk_cruising, BaseUpdateTask
@@ -14,6 +16,26 @@ logger = utils.get_logger()
 class CommonTask(object):
     def __init__(self, task_id):
         self.task_id = task_id
+
+    @contextmanager
+    def safe_phase(self, phase_name: str, base_update=None):
+        if base_update:
+            base_update.update_task_field("status", phase_name)
+        logger.info(f"Start phase: {phase_name} for task {self.task_id}")
+        t1 = time.time()
+        try:
+            yield
+        except Exception as e:
+            logger.error(f"[容错阻断] 阶段 {phase_name} 发生致命错误: {e}")
+            logger.error(traceback.format_exc())
+            if base_update:
+                base_update.update_task_field("error_msg", str(e))
+                base_update.update_services(f"{phase_name}_error", 0.0)
+        finally:
+            elapse = time.time() - t1
+            logger.info(f"End phase: {phase_name} for task {self.task_id}, cost: {elapse:.2f}s")
+            if base_update:
+                base_update.update_services(phase_name, elapse)
 
     def insert_task_stat(self):
         query = {
@@ -71,6 +93,9 @@ class CommonTask(object):
 
         services.sync_asset(task_id=self.task_id, scope_id=related_scope_id, push_flag=True)
 
+        from app.utils.monitor_diff import log_monitor_diff_summary
+        log_monitor_diff_summary(self.task_id)
+
     def _push_task_result_only(self):
         asset_map = {"domain": [], "ip": [], "site": [], "task_name": ""}
         asset_counter = {"domain": 0, "ip": 0, "site": 0}
@@ -84,7 +109,12 @@ class CommonTask(object):
             asset_counter[category] = len(items)
             asset_map[category] = items[:10]
 
-        utils.message_push(asset_map=asset_map, asset_counter=asset_counter)
+        utils.message_push(
+            asset_map=asset_map, 
+            asset_counter=asset_counter, 
+            update_map=asset_map, 
+            update_counter=asset_counter
+        )
 
     def common_run(self):
         self.insert_finger_stat()
@@ -172,6 +202,16 @@ class WebSiteFetch(object):
                         site_info["finger"].append(analyze_finger)
 
         self.site_info_list = deduplicated_site_info_list
+        from app.utils.monitor_diff import tag_monitor_diff
+        
+        filtered_list = []
+        for info in self.site_info_list:
+            tag_monitor_diff("site", info)
+            if info.get("change_status") != "unchanged":
+                filtered_list.append(info)
+                
+        self.site_info_list = filtered_list
+
         logger.info("save_site_info site:{}, {}".format(len(self.site_info_list), self.__str__()))
         if self.site_info_list:
             from pymongo import UpdateOne
@@ -236,14 +276,27 @@ class WebSiteFetch(object):
             self.available_sites.append(curr_site)
 
     def file_leak(self):
-        file_leak_dicts = utils.load_file(Config.FILE_LEAK_TOP_2k)
+        file_leak_dicts_path = Config.FILE_LEAK_TOP_2k
+        if hasattr(self, 'options') and self.options.get("file_leak_dict"):
+            from app.utils import get_safe_dict_path
+            try:
+                file_leak_dicts_path = get_safe_dict_path(self.options.get("file_leak_dict"))
+            except Exception as e:
+                logger.error(f"加载文件泄露字典失败: {e}")
+                pass
+        
+        all_items = []
         for site in self.poc_sites:
+            # Recreate generator for each site since generators are exhausted after one iteration
+            file_leak_dicts = utils.load_file_generator(file_leak_dicts_path)
             pages = services.file_leak([site], file_leak_dicts)
             for page in pages:
                 item = page.dump_json()
                 item["task_id"] = self.task_id
                 item["site"] = site
-                utils.safe_insert_asset('fileleak', ['task_id', 'site', 'url'], item)
+                all_items.append(item)
+        if all_items:
+            utils.safe_insert_asset_many('fileleak', ['task_id', 'site', 'url'], all_items)
 
     @property
     def poc_sites(self):
@@ -271,18 +324,24 @@ class WebSiteFetch(object):
             poc_targets = self.poc_sites | npoc_service_target_set
 
         result = run_risk_cruising(plugins=plugins, targets=poc_targets)
-        for item in result:
-            item["task_id"] = self.task_id
-            item["save_date"] = utils.curr_date()
-            utils.safe_insert_asset('vuln', ['task_id', 'vuln_url', 'plugin_name'], item)
+        if result:
+            for item in result:
+                item["task_id"] = self.task_id
+                item["save_date"] = utils.curr_date()
+                if "plg_name" in item:
+                    item["plugin_name"] = item.get("plg_name")
+                if "target" in item:
+                    item["vuln_url"] = item.get("target")
+            utils.safe_insert_asset_many('vuln', ['task_id', 'vuln_url', 'plugin_name'], result)
 
     def nuclei_scan(self):
         logger.info("start nuclei_scan， poc_sites:{}".format(len(self.poc_sites)))
         scan_results = nuclei_scan(list(self.poc_sites))
-        for item in scan_results:
-            item["task_id"] = self.task_id
-            item["save_date"] = utils.curr_date()
-            utils.safe_insert_asset('nuclei_result', ['task_id', 'template_id', 'host'], item)
+        if scan_results:
+            for item in scan_results:
+                item["task_id"] = self.task_id
+                item["save_date"] = utils.curr_date()
+            utils.safe_insert_asset_many('nuclei_result', ['task_id', 'template_id', 'host'], scan_results)
 
         logger.info("end nuclei_scan， result:{}".format(len(scan_results)))
 
@@ -292,7 +351,10 @@ class WebSiteFetch(object):
         t1 = time.time()
         func()
         elapse = time.time() - t1
-        self.base_update_task.update_services(name, elapse)
+
+        # 新增：恢复细颗粒度记录
+        if hasattr(self, 'base_update_task') and self.base_update_task:
+            self.base_update_task.update_services(name, round(elapse, 2))
 
         logger.info("end run {} ({:.2f}s), {}".format(name, elapse, self.__str__()))
 
@@ -329,6 +391,7 @@ class WebSiteFetch(object):
 
     def run_web_info_hunter(self):
         records = set(services.run_wih(self.sites))
+        all_items = []
         for record in records:
             # 先判断记录是否已经存在
             if record.fnv_hash in self.wih_record_set:
@@ -338,8 +401,11 @@ class WebSiteFetch(object):
 
             item = record.dump_json()
             item["task_id"] = self.task_id
-            utils.safe_insert_asset('wih', ['task_id', 'site', 'fnv_hash'], item)
+            all_items.append(item)
             self.wih_record_set.add(record.fnv_hash)
+            
+        if all_items:
+            utils.safe_insert_asset_many('wih', ['task_id', 'site', 'fnv_hash'], all_items)
 
     def run(self):
         # *** 对站点进行基本信息的获取
@@ -363,13 +429,7 @@ class WebSiteFetch(object):
             self.update_page_url_set()
             self.run_func(WebSiteFetchStatus.SITE_SPIDER, self.site_spider)
 
-        """ *** 对站点进行文件目录爆破 """
-        if self.options.get(WebSiteFetchOption.FILE_LEAK):
-            self.run_func(WebSiteFetchStatus.FILE_LEAK, self.file_leak)
 
-        """ *** 对站点运行 nuclei """
-        if self.options.get(WebSiteFetchOption.NUCLEI_SCAN):
-            self.run_func(WebSiteFetchStatus.NUCLEI_SCAN, self.nuclei_scan)
 
         """ *** 对站点调用 WebInfoHunter """
         if self.options.get(WebSiteFetchOption.Info_Hunter):

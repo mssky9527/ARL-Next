@@ -15,199 +15,129 @@ logger = get_logger()
 class Push(object):
     """docstring for ClassName"""
 
-    def __init__(self, asset_map, asset_counter):
+    def __init__(self, asset_map, asset_counter, update_map=None, update_counter=None):
         super(Push, self).__init__()
         self.asset_map = asset_map
         self.asset_counter = asset_counter
-        self._domain_info_list = None
-        self._site_info_list = None
-        self._ip_info_list = None
-        self.domain_len = self.asset_counter.get("domain", 0)
-        self.ip_len = self.asset_counter.get("ip", 0)
-        self.site_len = self.asset_counter.get("site", 0)
+        self.update_map = update_map or {}
+        self.update_counter = update_counter or {}
         self.task_name = self.asset_map.get("task_name", "")
+        self.has_any_data = any(v > 0 for v in self.asset_counter.values()) or any(v > 0 for v in self.update_counter.values())
 
-    @property
-    def domain_info_list(self):
-        if self._domain_info_list is None:
-            self._domain_info_list = self.build_domain_info_list()
+    def _build_generic_info_list(self, data_list, category):
+        if not data_list: return []
+        mapping = {
+            "site": {"站点": "site", "标题": "title", "状态码": "status"},
+            "domain": {"域名": "domain", "解析类型": "type", "记录": lambda x: x["record"][0] if x.get("record") else ""},
+            "ip": {"IP": "ip", "端口数目": lambda x: len(x.get("port_info", [])), "组织": lambda x: x.get("geo_asn", {}).get("organization", "")},
+            "vuln": {"目标": "target", "漏洞名称": "vul_name"},
+            "nuclei_result": {"目标": "target", "模板": "template_id"},
+            "service": {"服务": "service_name", "端口": "port_id"},
+            "fileleak": {"URL": "url", "状态": "status_code"},
+            "wih": {"站点": "site", "类型": lambda x: x.get("record_type") or x.get("recordType") or x.get("type", "")},
+            "url": {"URL": "url", "状态": "status"},
+            "cert": {"IP": "ip", "证书颁发": lambda x: x.get("cert", {}).get("subject", {}).get("common_name", "")},
+            "npoc_service": {"主机": "host", "端口": "port", "服务": "service"},
+            "cip": {"C段": "cidr_ip"},
+            "stat_finger": {"指纹": "name"}
+        }
+        info_list = []
+        for item in data_list:
+            d = {}
+            cmap = mapping.get(category, {"标识": "_id"})
+            for k, v in cmap.items():
+                try:
+                    d[k] = v(item) if callable(v) else item.get(v, "")
+                except:
+                    d[k] = ""
+            info_list.append(d)
+        return info_list
 
-        return self._domain_info_list
+    def _build_markdown_block(self, map_data, counter_data, formatter):
+        block = ""
+        for cat, cnt in counter_data.items():
+            if cnt > 0 and cat in map_data:
+                items = self._build_generic_info_list(map_data[cat], cat)
+                if not items: continue
+                block += f"\n**{cat}** (共 {cnt} 条)\n"
+                block += formatter(items) + "\n"
+        return block
 
-    @property
-    def site_info_list(self):
-        if self._site_info_list is None:
-            self._site_info_list = self.build_site_info_list()
+    def _generate_markdown_payload(self):
+        if not self.has_any_data:
+            return f"[{self.task_name}] 任务已完成，本次无新增或变动资产。\n"
+        
+        tpl = f"[{self.task_name}] 任务推送\n"
+        new_block = self._build_markdown_block(self.asset_map, self.asset_counter, dict2dingding_mark)
+        if new_block:
+            tpl += "\n### 🌟 新增资产\n" + new_block
+            
+        update_block = self._build_markdown_block(self.update_map, self.update_counter, dict2dingding_mark)
+        if update_block:
+            tpl += "\n### 🔄 更新资产\n" + update_block
+            
+        if len(tpl) > 3500:
+            tpl = tpl[:3500] + "\n\n...(数据过多已截断，详情请登录 ARL 系统查看)"
+        return tpl
 
-        return self._site_info_list
-
-    @property
-    def ip_info_list(self):
-        if self._ip_info_list is None:
-            self._ip_info_list = self.build_ip_info_list()
-
-        return self._ip_info_list
-
-    def build_domain_info_list(self):
-        if "domain" not in self.asset_map:
-            return []
-        domain_info_list = []
-        for old in self.asset_map["domain"]:
-            domain_dict = dict()
-            domain_dict["域名"] = old["domain"]
-            domain_dict["解析类型"] = old["type"]
-            domain_dict["记录值"] = old["record"][0]
-            domain_info_list.append(domain_dict)
-
-        return domain_info_list
-
-    def build_ip_info_list(self):
-        if "ip" not in self.asset_map:
-            return []
-        ip_info_list = []
-        for old in self.asset_map["ip"]:
-            ip_dict = dict()
-            port_list = []
-            for port_info in old["port_info"]:
-                port_list.append(str(port_info["port_id"]))
-
-            ip_dict["IP"] = old["ip"]
-            ip_dict["端口数目"] = len(port_list)
-            ip_dict["开放端口"] = ",".join(port_list[:10])
-            ip_dict["组织"] = old["geo_asn"].get("organization")
-            ip_info_list.append(ip_dict)
-
-        return ip_info_list
-
-    def build_site_info_list(self):
-        if "site" not in self.asset_map:
-            return []
-        site_info_list = []
-        for old in self.asset_map["site"]:
-            site_dict = dict()
-            site_dict["站点"] = old["site"]
-            site_dict["标题"] = old["title"]
-            site_dict["状态码"] = old["status"]
-            site_dict["favicon"] = old["favicon"].get("hash", "")
-            site_info_list.append(site_dict)
-        return site_info_list
+    def _generate_html_payload(self):
+        if not self.has_any_data:
+            return f"<div>[{self.task_name}] 任务已完成，本次无新增或变动资产。</div>"
+        
+        html = f"<h2>[{self.task_name}] 任务推送</h2>"
+        new_block = self._build_markdown_block(self.asset_map, self.asset_counter, dict2table)
+        if new_block:
+            html += "<h3>🌟 新增资产</h3>" + new_block.replace("\n", "<br/>")
+            
+        update_block = self._build_markdown_block(self.update_map, self.update_counter, dict2table)
+        if update_block:
+            html += "<h3>🔄 更新资产</h3>" + update_block.replace("\n", "<br/>")
+            
+        return html
 
     def _push_dingding(self):
-        if self.domain_len == 0 and self.ip_len == 0 and self.site_len == 0:
-            tpl = "[{}] 任务已完成，本次无新增资产。\n".format(self.task_name)
-        else:
-            tpl = ""
-            if self.domain_len > 0:
-                tpl = "[{}]新发现域名 `{}` , 站点 `{}`\n***\n".format(self.task_name, self.domain_len, self.site_len)
-                tpl = "{}\n{}".format(tpl, dict2dingding_mark(self.domain_info_list))
-
-            if self.ip_len > 0:
-                tpl = "[{}]新发现 IP `{}` , 站点 `{}`\n***\n".format(self.task_name, self.ip_len, self.site_len)
-                tpl = "{}\n{}".format(tpl, dict2dingding_mark(self.ip_info_list))
-
-            tpl += "\n***\n"
-            tpl = "{}\n{}".format(tpl, dict2dingding_mark(self.site_info_list))
-            
+        tpl = self._generate_markdown_payload()
         ding_out = dingding_send(msg=tpl, access_token=Config.DINGDING_ACCESS_TOKEN,
                                  secret=Config.DINGDING_SECRET, msgtype="markdown")
         if ding_out.get("errcode", 0) != 0:
-            logger.warning("发送失败 \n{}\n {}".format(tpl, ding_out))
+            logger.warning("发送失败 \\n{}\\n {}".format(tpl[:50], ding_out))
             return False
         return True
 
     def _push_wx_work(self):
-        if self.domain_len == 0 and self.ip_len == 0 and self.site_len == 0:
-            tpl = "[{}] 任务已完成，本次无新增资产。\n".format(self.task_name)
-        else:
-            tpl = ""
-            if self.domain_len > 0:
-                tpl = "[{}]新发现域名 `{}` , 站点 `{}`\n".format(self.task_name, self.domain_len, self.site_len)
-                tpl = "{}\n{}".format(tpl, dict2dingding_mark(self.domain_info_list))
-
-            if self.ip_len > 0:
-                tpl = "[{}]新发现 IP `{}` , 站点 `{}`\n".format(self.task_name, self.ip_len, self.site_len)
-                tpl = "{}\n{}".format(tpl, dict2dingding_mark(self.ip_info_list))
-
-            tpl += "\n"
-            tpl = "{}\n{}".format(tpl, dict2dingding_mark(self.site_info_list))
-            
+        tpl = self._generate_markdown_payload()
         ding_out = wx_work_send(msg=tpl, webhook_url=Config.WX_WORK_WEBHOOK)
         if ding_out.get("errcode", 0) != 0:
-            logger.warning("发送失败 \n{}\n {}".format(tpl, ding_out))
+            logger.warning("发送失败 \\n{}\\n {}".format(tpl[:50], ding_out))
             return False
         return True
 
     def _push_feishu(self):
-        if self.domain_len == 0 and self.ip_len == 0 and self.site_len == 0:
-            tpl = "[{}] 任务已完成，本次无新增资产。\n".format(self.task_name)
-        else:
-            tpl = ""
-            if self.domain_len > 0:
-                tpl = "[{}]新发现域名 {}, 站点 {}\n".format(self.task_name, self.domain_len, self.site_len)
-                tpl = "{}{}".format(tpl, dict2dingding_mark(self.domain_info_list))
-
-            if self.ip_len > 0:
-                tpl = "[{}]新发现 IP {}, 站点{}\n".format(self.task_name, self.ip_len, self.site_len)
-                tpl = "{}{}".format(tpl, dict2dingding_mark(self.ip_info_list))
-
-            tpl = "{}\n{}".format(tpl, dict2dingding_mark(self.site_info_list))
-            
+        tpl = self._generate_markdown_payload()
         feishu_out = feishu_send(msg=tpl, webhook_url=Config.FEISHU_WEBHOOK,
                                  secret=Config.FEISHU_SECRET)
         if feishu_out.get("code", 0) != 0:
-            logger.warning("发送失败 \n{}\n {}".format(tpl[:50], feishu_out))
+            logger.warning("发送失败 \\n{}\\n {}".format(tpl[:50], feishu_out))
             return False
         return True
 
     def _push_telegram(self):
-        if self.domain_len == 0 and self.ip_len == 0 and self.site_len == 0:
-            tpl = "[{}] 任务已完成，本次无新增资产。\n".format(self.task_name)
-        else:
-            tpl = ""
-            if self.domain_len > 0:
-                tpl = "[{}]新发现域名 {}, 站点 {}\n".format(self.task_name, self.domain_len, self.site_len)
-                tpl = "{}{}".format(tpl, dict2dingding_mark(self.domain_info_list))
-
-            if self.ip_len > 0:
-                tpl = "[{}]新发现 IP {}, 站点{}\n".format(self.task_name, self.ip_len, self.site_len)
-                tpl = "{}{}".format(tpl, dict2dingding_mark(self.ip_info_list))
-
-            tpl = "{}\n{}".format(tpl, dict2dingding_mark(self.site_info_list))
-            
+        tpl = self._generate_markdown_payload()
         try:
-            tg_out = telegram_send(f"*{self.task_name}*\n\n{tpl}", bot_token=Config.TG_BOT_TOKEN, chat_id=Config.TG_CHAT_ID)
+            tg_out = telegram_send(f"*{self.task_name}*\\n\\n{tpl}", bot_token=Config.TG_BOT_TOKEN, chat_id=Config.TG_CHAT_ID)
             if not tg_out.get("ok"):
-                logger.warning("Telegram发送失败 \n{}\n {}".format(tpl[:50], tg_out))
+                logger.warning("Telegram发送失败 \\n{}\\n {}".format(tpl[:50], tg_out))
                 return False
             return True
         except Exception as e:
-            logger.warning("Telegram发送异常 \n{}\n {}".format(tpl[:50], str(e)))
+            logger.warning("Telegram发送异常 \\n{}\\n {}".format(tpl[:50], str(e)))
             return False
 
     def _push_email(self):
-        if self.domain_len == 0 and self.ip_len == 0 and self.site_len == 0:
-            html = "<div> [{}] 任务已完成，本次无新增资产。</div>".format(self.task_name)
-        else:
-            html = ""
-            if self.domain_len > 0:
-                tpl = "<div> 新发现域名 {}, 站点 {}\n</div>".format(self.domain_len, self.site_len)
-                html += tpl
-                html += "<br/>"
-                html += dict2table(self.domain_info_list)
-
-            if self.ip_len > 0:
-                tpl = "<div> 新发现 IP {}, 站点 {}\n</div>".format(self.ip_len, self.site_len)
-                html += tpl
-                html += "<br/>"
-                html += dict2table(self.ip_info_list)
-
-            html += "<br/><br/>"
-            html += dict2table(self.site_info_list)
-
+        html = self._generate_html_payload()
         title = "[{}] 灯塔消息推送".format(self.task_name[:50])
         send_email(host=Config.EMAIL_HOST, port=Config.EMAIL_PORT, mail=Config.EMAIL_USERNAME,
                    password=Config.EMAIL_PASSWORD, to=Config.EMAIL_TO, title=title, html=html)
-
         return True
 
     def push_dingding(self):
@@ -257,11 +187,11 @@ class Push(object):
             logger.warning(f"[{self.task_name}] push telegram error: {e}")
 
 
-def message_push(asset_map, asset_counter):
+def message_push(asset_map, asset_counter, update_map=None, update_counter=None):
     if "task_complete" not in Config.PUSH_OPTIONS:
         return
     logger.info("ARL push run")
-    p = Push(asset_map=asset_map, asset_counter=asset_counter)
+    p = Push(asset_map=asset_map, asset_counter=asset_counter, update_map=update_map, update_counter=update_counter)
     p.push_dingding()
     p.push_email()
     p.push_feishu()

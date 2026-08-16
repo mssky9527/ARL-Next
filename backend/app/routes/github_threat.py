@@ -105,7 +105,6 @@ def delete_cve_history():
         utils.conn_db("github_cve_history").delete_one({"cve_name": cve_name})
     return utils.build_ret(ErrorMsg.Success, {"msg": "删除成功"})
 
-import threading
 
 @github_threat_bp.route('/cve_config', methods=['GET'])
 def get_cve_config():
@@ -221,5 +220,5 @@ def get_token_status():
             return utils.build_ret(ErrorMsg.Success, {"status": "valid", "msg": f"生效中 (剩余额度: {remaining})"})
         else:
             return utils.build_ret(ErrorMsg.Success, {"status": "invalid", "msg": "Token 无效或已过期"})
-    except Exception as e:
+    except Exception:
         return utils.build_ret(ErrorMsg.Success, {"status": "error", "msg": f"网络请求失败"})

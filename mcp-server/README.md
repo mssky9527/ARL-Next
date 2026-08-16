@@ -1,63 +1,96 @@
-# 🤖 ARL-Next MCP Server
+# ARL-Next MCP Server
 
-> 为 AI 助手量身定制的 ARL 资产侦察灯塔系统接口，让大模型（如 Cursor, Claude, Antigravity）无缝接管安全运营。
+> 让 Claude Code 直接对接 ARL（资产侦察灯塔），以极其节省 Token 的 CSV 格式获取目标资产情报。
 
----
+## 它能做什么
 
-## ⚡ 极速接入
+当前暴露 **2 个工具**：
 
-本服务已全面容器化，无需配置 Node.js 依赖。推荐使用一键复制功能：
+1. `export_task_assets`：一键导出目标所有资产为本地 CSV 并返回战术大盘摘要（适合指令：“请使用 arl-next mcp工具导出 dcdapp.com 的所有资产数据”）。
+2. `get_task_detail_export`：按需在对话中获取单维度的 CSV 数据（支持列裁剪与分页）。
 
-💡 **快捷方式**：登录 ARL-Next 首页，点击右上角 **「AI 助手接入 (MCP)」** 复制您的专属配置。
+## 环境变量
 
-**手动配置示例** (添加至您的 AI 客户端 `mcpServers` 节点)：
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `ARL_HOST` | ARL 后端 API 地址 | `https://127.0.0.1:5003` |
+| `ARL_TOKEN` | ARL API Token | 空（必填） |
+
+## 快速开始
+
+### 方式 A：Python 虚拟环境（Claude Code 推荐）
+
+```bash
+cd mcp-server
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+注册到 Claude Code（替换地址与 Token）：
+
+```bash
+claude mcp add -s user arl-next-mcp \
+  "$(pwd)/.venv/bin/python" "$(pwd)/server.py" \
+  --env ARL_HOST="https://<你的ARL地址>:5003" \
+  --env ARL_TOKEN="<你的Token>"
+```
+
+### 方式 B：Docker
+
+```bash
+docker build -t arl-next-mcp:latest .
+```
+
+客户端 MCP 配置：
 
 ```json
 "ARL-Next": {
   "command": "docker",
-  "args": [
-    "run", "-i", "--rm",
-    "-e", "ARL_HOST",
-    "-e", "ARL_TOKEN",
-    "arl-next-mcp:latest"
-  ],
+  "args": ["run", "-i", "--rm", "-e", "ARL_HOST", "-e", "ARL_TOKEN", "arl-next-mcp:latest"],
   "env": {
-    "ARL_HOST": "https://[您的服务器IP或域名]:5000",
-    "ARL_TOKEN": "您的_API_TOKEN"
+    "ARL_HOST": "https://<你的ARL地址>:5003",
+    "ARL_TOKEN": "<你的Token>"
   }
 }
 ```
-*注：初次使用需先拉取本项目代码，并在终端进入 `mcp-server` 目录后执行 `docker build -t arl-next-mcp:latest .` 以构建本地镜像。*
 
-**💡 常见 AI 客户端配置路径：**
+## 工具参考
 
-| 客户端 | 配置入口 / 文件路径 |
-| :--- | :--- |
-| **Claude Desktop** | **Mac**: `~/Library/Application Support/Claude/claude_desktop_config.json`<br>**Win**: `%APPDATA%\Claude\claude_desktop_config.json` |
-| **Cursor** | 面板：`Settings` -> `Features` -> `MCP` -> `+ Add new MCP server` |
-| **Antigravity** | **全局**: `~/.gemini/config/mcp.json`<br>**项目**: `.gemini/mcp.json` |
-| **Codex** | **全局**: `~/.codex/config.toml` (在 `[mcp_servers.arl-next]` 节点添加) |
+### 1. `export_task_assets`
 
----
+一键全量导出目标全部 13 维资产到本地 CSV，并返回极简 Markdown 战术总览。
 
-## 🛠️ 核心能力矩阵 (Tools)
+**参数**
 
-AI 助手已自动掌握以下 6 大核心技能，支持智能化分页与纠错：
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `target` | string | ❌ | 目标名称（如 `dcdapp.com`），自动检索最新任务 ID。 |
+| `task_id` | string | ❌ | 24位 ARL 任务 ID，若提供则优先使用。 |
+| `output_dir` | string | ❌ | 自定义本地保存目录（默认保存到 `recon/<target>/arl/`）。 |
 
-### 🔍 资产与漏洞分析
-- **`search_assets`** 资产检索：全方位搜寻站点、IP、域名、证书及服务指纹。 *(例: "查一下开了 nginx 的站点")*
-- **`search_vulns`** 漏洞查询：精准检索安全漏洞，支持按严重级别过滤。 *(例: "最近有哪些高危漏洞？")*
-- **`get_tasks`** 任务监控：实时跟进扫描任务的进度与状态。 *(例: "看看有没有失败的任务")*
-- **`get_dashboard_summary`** 运行概览：一键生成全盘资产、任务与漏洞统计大盘。 *(例: "给我一份今日战报")*
-
-### 🏢 商业/备案情报 (ICP)
-- **`search_icp_tasks`** ICP 任务追踪：查询企业备案拉取任务进度。 *(例: "某某公司的ICP查完没？")*
-- **`search_icp_assets`** 子资产挖掘：深挖小程序、公众号、快应用等扩展资产。 *(例: "列出那个任务查到的所有公众号")*
+**自然语言触发词**：
+- *"请使用 arl-next mcp 工具导出 dcdapp.com 的所有资产数据"*
+- *"导出目标 XX 的所有资产"*
+- *"把 XX 的扫描结果存到本地"*
 
 ---
 
-## 📚 API 参考
+### 2. `get_task_detail_export`
 
-开发者需要直接对接后端 API？
-ARL-Next 提供开箱即用的 OpenAPI (Swagger) 交互式文档：
-👉 访问地址：`https://[您的服务器IP或域名]:5173/api/doc`
+在对话流中按需提取特定维度的 CSV 数据，支持列过滤。
+
+**参数**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `target` | string | ❌ | 目标域名（如 `dcdapp.com`）。 |
+| `task_id` | string | ❌ | 24位任务 ID。 |
+| `tab` | string | ❌ | 数据表名（如 `site`, `domain`, `ip`, `cert`, `wih`, `fileleak`, `vuln` 等 13 个表），默认 `site`。 |
+| `page` | integer | ❌ | 页码，默认 1。 |
+| `limit` | integer | ❌ | 每页条数，默认 100。 |
+| `columns` | array | ❌ | 指定返回的列名列表（例如 `["IP", "开放端口"]`）。 |
+
+## 依赖
+
+`mcp>=1.0.0,<2.0.0`、`requests`、`urllib3`（见 `requirements.txt`）。

@@ -27,7 +27,7 @@ class ARLResource(Resource):
     # 字段查询映射配置，子类可覆盖以实现特定字段的转换
     query_field_map = {
         "finger": "finger.name",
-        "record_type": "recordType"
+        "vul_category": "plg_type"
     }
 
     def get_parser(self, model, location='json'):
@@ -220,6 +220,8 @@ class ARLResource(Resource):
 
         # 第一层循环：遍历查出来的每一条数据（每一行记录）
         for item in data:
+            if "plg_type" in item and "vul_category" not in item:
+                item["vul_category"] = item["plg_type"]
             # 第二层循环：遍历这一条数据里的每一个字段名（比如 name, _id, status）
             for key in item:
                 # 核心操作：把它的值强制转换成普通字符串 (string)
@@ -249,6 +251,14 @@ class ARLResource(Resource):
 
         # 2. 让“翻译官”把剩下的 args 翻译成 MongoDB 查询语句
         query = self.build_db_query(args)
+
+        # 强制拦截过滤: 如果是监控子任务，默认只显示增量 (new/update)
+        if collection and collection.startswith("asset_") and "task_id" in query:
+            task_id = query["task_id"]
+            if isinstance(task_id, str) and len(task_id) == 24:
+                from app.utils.monitor_diff import _get_task_scope_id
+                if _get_task_scope_id(task_id):
+                    query["change_status"] = {"$in": ["new", "update"]}
 
         # 3. 核心数据库操作（连招）：
         # 加入 projection 剔除特别大的无用字段 (如 favicon.data 和 body)
@@ -412,7 +422,7 @@ class ARLResource(Resource):
 
                 # 6. 【特殊处理】WIH 信息导出需保留业务上下文
                 elif _type in ("wih", "asset_wih"):
-                    record_type = item.get("recordType", "unknown")
+                    record_type = item.get("record_type") or item.get("recordType", "unknown")
                     site = item.get("site", "unknown_site")
                     content = item.get(filed_name, "")
                     items_set.add(f"{site} [{record_type}] {content}")
@@ -488,11 +498,11 @@ class ARLResource(Resource):
                     items_set.add(curr_ip)
 
         elif _type in ("wih", "asset_wih"):
-            cursor = conn(_type).find(query, {"site": 1, "recordType": 1, filed_name: 1, "_id": 0})
+            cursor = conn(_type).find(query, {"site": 1, "record_type": 1, "recordType": 1, filed_name: 1, "_id": 0})
             for item in cursor:
                 if not item.get(filed_name):
                     continue
-                record_type = item.get("recordType", "unknown")
+                record_type = item.get("record_type") or item.get("recordType", "unknown")
                 site = item.get("site", "unknown_site")
                 content = item.get(filed_name, "")
                 items_set.add(f"{site} [{record_type}] {content}")
@@ -655,4 +665,6 @@ from .assetNpocService import ns as asset_npoc_service_ns
 from .assetCip import ns as asset_cip_ns
 from .assetNucleiResult import ns as asset_nuclei_result_ns
 from .assetStatFinger import ns as asset_stat_finger_ns
+from .mcp import ns as mcp_ns
+
 

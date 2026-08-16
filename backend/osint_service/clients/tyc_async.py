@@ -22,39 +22,73 @@ class AsyncTycClient:
         }
         self.page_size = 100
 
-    async def _request(self, method, path, json_data=None, params=None):
+    async def _request(self, method, path, json_data=None, params=None, max_retries=3):
+        import random
+        await asyncio.sleep(random.uniform(5, 10))
         if not self.gid or not self.token:
             raise AsyncTycException("未配置天眼查 ID 或 Token。")
 
         url = urljoin(self.base_url, path)
         async with aiohttp.ClientSession() as session:
-            try:
-                if method.upper() == 'POST':
-                    async with session.post(url, headers=self.headers, json=json_data, timeout=15) as res:
-                        status = res.status
-                        text = await res.text()
-                        data = await res.json() if "application/json" in res.headers.get("Content-Type", "") else None
-                else:
-                    async with session.get(url, headers=self.headers, params=params, timeout=15) as res:
-                        status = res.status
-                        text = await res.text()
-                        data = await res.json() if "application/json" in res.headers.get("Content-Type", "") else None
-            except asyncio.TimeoutError:
-                raise AsyncTycException("天眼查 API 请求超时")
-            except Exception as e:
-                raise AsyncTycException(f"网络异常: {e}")
+            for attempt in range(max_retries):
+                try:
+                    if method.upper() == 'POST':
+                        async with session.post(url, headers=self.headers, json=json_data, timeout=15) as res:
+                            status = res.status
+                            text = await res.text()
+                            data = await res.json() if "application/json" in res.headers.get("Content-Type", "") else None
+                    else:
+                        async with session.get(url, headers=self.headers, params=params, timeout=15) as res:
+                            status = res.status
+                            text = await res.text()
+                            data = await res.json() if "application/json" in res.headers.get("Content-Type", "") else None
+                except asyncio.TimeoutError:
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(5 * (attempt + 1))
+                        continue
+                    raise AsyncTycException("天眼查 API 请求超时")
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(5 * (attempt + 1))
+                        continue
+                    raise AsyncTycException(f"网络异常: {e}")
 
-            if status == 401:
-                raise AsyncTycException("TYC Token 已失效。")
-            elif status in [403, 429]:
-                raise AsyncTycException("触发天眼查风控拦截或限流。")
-            elif status != 200:
-                raise AsyncTycException(f"天眼查 API 请求失败, HTTP {status}, {text[:100]}")
+                if status == 401:
+                    raise AsyncTycException("TYC Token 已失效。")
+                elif status in [403, 429]:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"触发限流(HTTP {status})，挂起 {15 * (attempt + 1)} 秒后重试 (Attempt {attempt+1}/{max_retries})...")
+                        await asyncio.sleep(15 * (attempt + 1))
+                        continue
+                    raise AsyncTycException("触发天眼查风控拦截或限流。")
+                elif status != 200:
+                    raise AsyncTycException(f"天眼查 API 请求失败, HTTP {status}, {text[:100]}")
 
-            if not data or 'data' not in data:
-                return None
+                if not data:
+                    return None
 
-            return data.get('data')
+                state = str(data.get("state", "")).lower()
+                message = str(data.get("message", ""))
+                
+                # 1. 过滤正常的无数据场景
+                if "无数据" in message or "未找到" in message or "为空" in message:
+                    return None
+                    
+                # 2. 精准识别风控拦截与业务异常
+                if state != "ok":
+                    if any(kw in message for kw in ["频繁", "验证码", "登录", "异常", "机器人", "操作过快", "校验"]):
+                        if attempt < max_retries - 1:
+                            logger.warning(f"触发风控 ({message})，挂起 {15 * (attempt + 1)} 秒后重试 (Attempt {attempt+1}/{max_retries})...")
+                            await asyncio.sleep(15 * (attempt + 1))
+                            continue
+                        raise AsyncTycException(f"触发天眼查风控拦截: {message}")
+                    else:
+                        raise AsyncTycException(f"天眼查业务异常: state={state}, message={message}")
+
+                if 'data' not in data:
+                    return None
+
+                return data.get('data')
 
     async def fetch_all_pages(self, method, path, total_key, list_key, gid_field="gid", gid_val=None, extra_payload=None, delay=1.5):
         results = []

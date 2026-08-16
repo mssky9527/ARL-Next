@@ -1,6 +1,6 @@
 from .domain import domain_task
 from .ip import ip_task
-from .scheduler import domain_executors, ip_executor
+from .scheduler import domain_executors, ip_executor, oneshot_domain_executors, oneshot_ip_executors
 from .poc import run_risk_cruising_task
 from .github import github_task_task, github_task_monitor
 from .asset_site import asset_site_update_task

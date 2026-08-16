@@ -1,4 +1,3 @@
-import logging
 
 from app.services.dns_query import DNSQueryBase
 from app import utils

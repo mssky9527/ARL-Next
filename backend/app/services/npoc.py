@@ -33,8 +33,8 @@ class NPoC(object):
         """ xing 中插件名称列表 """
 
         if self._plugin_name_list is None:
-            # 触发下调用
-            x = self.poc_info_list
+            # 触发下调用，确保 poc_info_list 已经被解析，从而填充 plugin_name_set
+            _ = self.poc_info_list
             self._plugin_name_list = list(self.plugin_name_set)
 
         return self._plugin_name_list

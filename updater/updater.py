@@ -15,6 +15,20 @@ PORT = 8888
 update_thread = None
 dynamic_progress = {}
 
+def get_env_mode():
+    try:
+        result = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], stdout=subprocess.PIPE, text=True)
+        if "arl-web-prod" in result.stdout:
+            return "prod"
+        elif "arl-web" in result.stdout:
+            return "dev"
+    except Exception:
+        pass
+    return "prod"
+
+def get_web_container():
+    return "arl-web-prod" if get_env_mode() == "prod" else "arl-web"
+
 class PollingHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed_url = urlparse(self.path)
@@ -52,7 +66,7 @@ class PollingHandler(BaseHTTPRequestHandler):
 
         # Invalidate token inside container
         try:
-            subprocess.run(["docker", "exec", "arl-web-prod", "rm", "-f", TOKEN_FILE])
+            subprocess.run(["docker", "exec", get_web_container(), "rm", "-f", TOKEN_FILE])
         except Exception:
             pass
 
@@ -120,7 +134,7 @@ class PollingHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            subprocess.run(["docker", "exec", "arl-web-prod", "rm", "-f", TOKEN_FILE])
+            subprocess.run(["docker", "exec", get_web_container(), "rm", "-f", TOKEN_FILE])
         except Exception:
             pass
 
@@ -167,42 +181,59 @@ class PollingHandler(BaseHTTPRequestHandler):
 
     def run_update_task(self):
         self.log_append("[INFO] ✅ Token 验证成功，后台任务已启动...")
-        script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "start-prod.sh"))
+        mode = get_env_mode()
+        script_name = "start-prod.sh"
+        script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", script_name))
         
-        self.log_append("[INFO] 📦 正在拉取核心镜像以提取最新架构配置...")
-        image_name = "crpi-laul1izptqrf0tkf.cn-beijing.personal.cr.aliyuncs.com/owl234-arl-prod/arl-web:latest"
-        if not self.run_command(["docker", "pull", image_name]):
-            self.log_append("[ERROR] ❌ 核心镜像拉取失败，可能是网络波动。已中止更新流程，请稍后重试。")
-            time.sleep(5)
-            return
-        
-        self.log_append("[INFO] 📦 正在提取并覆盖最新基础架构文件...")
-        cwd = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        copy_cmd = [
-            "docker", "run", "--rm",
-            "-v", f"{cwd}:/host",
-            image_name,
-            "bash", "-c",
-            "cp /code/start-prod.sh /code/docker-compose.prod.yml /host/ 2>/dev/null || true; mkdir -p /host/updater && cp /code/updater/updater.py /host/updater/ 2>/dev/null || true"
-        ]
-        self.run_command(copy_cmd)
-        
-        # 赋予可执行权限
-        subprocess.run(["chmod", "+x", script_path])
-        
-        self.log_append("[INFO] 📦 基础架构同步完毕，正在拉取其余 Docker 镜像并部署...")
-        self.log_append("[INFO] 🚀 开始执行 start-prod.sh，这可能需要几分钟...")
-        
-        success = self.run_command(["bash", script_path])
-        if success:
-            self.log_append("[DONE] 🎉 系统更新与部署已全部完成！请刷新页面体验新版本。")
-        else:
-            self.log_append("[ERROR] ❌ 部署脚本执行失败，部分服务异常，请仔细检查上述日志！")
+        if mode == "prod":
+            self.log_append("[INFO] 📦 正在拉取核心镜像以提取最新架构配置...")
+            image_name = "crpi-laul1izptqrf0tkf.cn-beijing.personal.cr.aliyuncs.com/owl234-arl-prod/arl-web:latest"
+            if not self.run_command(["docker", "pull", image_name]):
+                self.log_append("[ERROR] ❌ 核心镜像拉取失败，可能是网络波动。已中止更新流程，请稍后重试。")
+                time.sleep(5)
+                return
             
-        # 让前端有充足的时间（约5秒）通过轮询获取到最后的 [DONE] 或 [ERROR] 日志
-        time.sleep(5)
-        # 体面地结束整个 Python 进程，触发 Systemd 的 Restart=always 机制拉起新版本
-        os._exit(0)
+            self.log_append("[INFO] 📦 正在提取并覆盖最新基础架构文件...")
+            cwd = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            copy_cmd = [
+                "docker", "run", "--rm",
+                "-v", f"{cwd}:/host",
+                image_name,
+                "bash", "-c",
+                "cp /code/start-prod.sh /code/docker-compose.prod.yml /host/ 2>/dev/null || true; mkdir -p /host/updater && cp /code/updater/updater.py /host/updater/ 2>/dev/null || true"
+            ]
+            self.run_command(copy_cmd)
+        else:
+            self.log_append("[INFO] 📦 检测到开发环境，正在通过 git pull 更新代码...")
+            cwd = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+            if not self.run_command(["git", "pull"]):
+                self.log_append("[ERROR] ❌ Git pull 代码拉取失败。")
+                time.sleep(5)
+                return
+
+        if mode == "prod":
+            # 赋予可执行权限
+            subprocess.run(["chmod", "+x", script_path])
+            
+            self.log_append("[INFO] 📦 基础架构同步完毕，正在拉取其余 Docker 镜像并部署...")
+            self.log_append(f"[INFO] 🚀 开始执行 {script_name}，这可能需要几分钟...")
+            
+            success = self.run_command(["bash", script_path])
+            if success:
+                self.log_append("[DONE] 🎉 系统更新与部署已全部完成！请刷新页面体验新版本。")
+            else:
+                self.log_append("[ERROR] ❌ 部署脚本执行失败，部分服务异常，请仔细检查上述日志！")
+                
+            # 让前端有充足的时间（约5秒）通过轮询获取到最后的 [DONE] 或 [ERROR] 日志
+            time.sleep(5)
+            # 体面地结束整个 Python 进程，触发 Systemd 的 Restart=always 机制拉起新版本
+            os._exit(0)
+        else:
+            self.log_append("[INFO] 📦 开发环境代码已更新，正在重启 Docker 容器...")
+            self.run_command(["docker", "compose", "-f", "docker-compose.dev.yml", "up", "-d", "--build"])
+            self.log_append("[DONE] 🎉 代码更新与后端重启已完成！(注：请手动在终端重新运行 pnpm run dev 启动前端服务)")
+            # 留给前端时间读取日志，然后结束更新流程，不强制杀进程
+            time.sleep(5)
 
     def run_command(self, cmd):
         global dynamic_progress
@@ -279,7 +310,7 @@ class PollingHandler(BaseHTTPRequestHandler):
         if not provided_token:
             return False
         try:
-            result = subprocess.run(["docker", "exec", "arl-web-prod", "cat", TOKEN_FILE], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            result = subprocess.run(["docker", "exec", get_web_container(), "cat", TOKEN_FILE], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             if result.returncode == 0:
                 valid_token = result.stdout.strip()
                 return provided_token == valid_token and len(valid_token) > 10

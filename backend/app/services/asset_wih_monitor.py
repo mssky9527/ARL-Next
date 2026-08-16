@@ -1,7 +1,6 @@
 from app.helpers import asset_site, get_scope_by_scope_id
 from app.services import run_wih
-from app.utils import get_logger, check_domain_black
-from app.modules import WihRecord
+from app.utils import get_logger
 from app import utils
 
 logger = get_logger()

@@ -1,75 +1,124 @@
 <template>
   <div style="padding: 24px; background: var(--arl-bg-white); min-height: 100%;">
-    <h2 style="margin-bottom: 24px;">系统设置</h2>
     
+
     <a-tabs v-model:activeKey="activeKey">
       <!-- 统一字典管理 Tab -->
       <a-tab-pane key="dictionary" tab="字典管理">
         <a-spin :spinning="loading || bruteLoading">
-            <div style="display: flex; gap: 0; height: calc(100vh - 180px); min-height: 580px; border: 1px solid var(--arl-border-color); border-radius: 4px; overflow: hidden;"> <!-- 左侧语义化菜单与独立滚动 -->
+            <div style="display: flex; gap: 0; height: calc(100vh - 180px); min-height: 580px; border-radius: 12px; overflow: hidden; box-shadow: 0 12px 48px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.04); border: 1px solid rgba(0,0,0,0.05); background: var(--arl-bg-white);"> <!-- 左侧语义化菜单与独立滚动 -->
             <div style="width: 256px; flex-shrink: 0; border-right: 1px solid var(--arl-border-color); background: var(--arl-bg-white); display: flex; flex-direction: column;">
-              <div style="padding: 16px; border-bottom: 1px solid var(--arl-border-color);">
-                <a-input-search v-model:value="menuSearch" placeholder="搜索字典名称..." style="width: 100%; border-radius: 4px;" />
+              <div style="padding: 16px; border-bottom: 1px solid var(--arl-border-color); display: flex; align-items: center; min-height: 64px; box-sizing: border-box;">
+                <span style="font-weight: 600; font-size: 14px; color: var(--arl-text-color);">字典分类</span>
               </div>
-              <div style="flex: 1; overflow-y: auto;">
-                <a-menu
-                  v-model:selectedKeys="unifiedSelectedKeys"
-                  v-model:openKeys="menuOpenKeys"
-                  mode="inline"
-                  :style="{ borderRight: 'none' }"
-                  @select="handleUnifiedMenuSelect"
-                >
-                  <a-sub-menu v-for="group in filteredTreeData" :key="group.key">
-                    <template #title>
-                      <span style="font-weight: 600; color: var(--arl-text-color);">{{ group.title }}</span>
-                    </template>
-                    <a-menu-item v-for="item in group.children" :key="item.key" style="height: auto; line-height: normal; padding-top: 8px; padding-bottom: 8px;">
-                      <div style="display: flex; flex-direction: column; gap: 4px;">
-                        <span style="color: var(--arl-text-color); font-size: 13px; font-weight: 500;">{{ item.mainTitle }}</span>
-                        <span style="color: var(--arl-text-color); opacity: 0.65; font-size: 11px;">{{ item.subTitle }}</span>
+              <div class="hide-scrollbar" style="flex: 1; overflow-y: auto;">
+                <div style="padding: 12px 8px; display: flex; flex-direction: column; gap: 4px;">
+                  <div
+                    v-for="group in treeData" :key="group.key"
+                    class="custom-list-item"
+                    :class="{ 'is-active': selectedCategoryKeys.includes(group.key) }"
+                    @click="handleCategorySelect({ key: group.key })"
+                  >
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <span style="opacity: 0.9;">🗂️</span>
+                      <span class="dict-title" style="font-weight: 600;">{{ group.title }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. 中间：字典列表 -->
+            <div style="width: 250px; flex-shrink: 0; border-right: 1px solid var(--arl-border-color); background: var(--arl-bg-white); display: flex; flex-direction: column;">
+              <div style="padding: 16px; border-bottom: 1px solid var(--arl-border-color); min-height: 64px; box-sizing: border-box;">
+                <div style="display: flex; gap: 8px;">
+                  <a-input-search v-model:value="menuSearch" placeholder="搜索当前分类下的字典..." style="flex: 1; border-radius: 4px;" />
+                  <a-button type="primary" @click="openCreateDictDrawer" style="padding: 0 8px;" title="新建字典">
+                    <template #icon><span style="margin-right:0px;">➕</span></template>
+                  </a-button>
+                </div>
+              </div>
+              <div class="hide-scrollbar" style="flex: 1; overflow-y: auto; padding: 12px 8px;">
+                <div v-if="currentFilteredDicts.length === 0" style="padding: 48px 24px; text-align: center; color: var(--arl-text-color); opacity: 0.65; display: flex; flex-direction: column; align-items: center; gap: 12px;">
+                  <span style="font-size: 32px; opacity: 0.8;">📭</span>
+                  <span style="font-size: 13px; font-weight: 500;">分类下暂无字典</span>
+                  <span style="font-size: 12px; opacity: 0.7;">点击上方 ➕ 新建或者换个分类</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <div
+                    v-for="item in currentFilteredDicts" :key="item.key"
+                    class="custom-list-item"
+                    :class="{ 'is-active': unifiedSelectedKeys.includes(item.key) }"
+                    @click="handleUnifiedSelect([item.key])"
+                  >
+                    <div style="display: flex; align-items: flex-start; gap: 8px;">
+                      <span style="font-size: 16px; margin-top: 2px; opacity: 0.9;">📄</span>
+                      <div style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0;">
+                        <span class="dict-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500;">{{ item.mainTitle }}</span>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                          <span class="dict-subtitle">{{ item.subTitle }}</span>
+                          <span class="dict-badge">txt</span>
+                        </div>
                       </div>
-                    </a-menu-item>
-                  </a-sub-menu>
-                </a-menu>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
             <!-- 右侧统一操作面板 -->
-            <div style="flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; background: var(--arl-bg-white);">
+            <div style="flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; background: var(--arl-bg-white); position: relative;">
 
               <!-- 未选中时占位（健康看板） -->
-              <div v-if="!unifiedSelectedType" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--arl-text-color); gap: 16px; overflow-y: auto;">
-                <div style="font-size: 48px; margin-bottom: 8px;">📊</div>
-                <h3 style="margin: 0; color: var(--arl-text-color); font-weight: bold;">字典库健康概览</h3>
-                <div style="display: flex; gap: 24px; margin-top: 16px;">
-                  <div style="text-align: center; background: var(--arl-bg-light); padding: 20px 32px; border-radius: 8px; border: 1px solid var(--arl-border-color); min-width: 160px;">
-                    <div style="font-size: 28px; font-weight: bold; color: var(--arl-theme-color);">{{ dictList.length }}</div>
-                    <div style="font-size: 13px; color: var(--arl-text-color); margin-top: 6px;">核心资产字典数</div>
+              <div v-if="!unifiedSelectedType" class="health-dashboard-wrapper">
+                <div class="health-dashboard-bg"></div>
+                <div class="health-content">
+                  <div class="health-icon-pulse">
+                    <span style="font-size: 56px;">🌌</span>
                   </div>
-                  <div style="text-align: center; background: var(--arl-bg-white)7e6; padding: 20px 32px; border-radius: 8px; border: 1px solid var(--arl-border-color); min-width: 160px;">
-                    <div style="font-size: 28px; font-weight: bold; color: #fa8c16;">{{ bruteDictList.length }}</div>
-                    <div style="font-size: 13px; color: var(--arl-text-color); margin-top: 6px;">弱口令字典数</div>
+                  <h3 class="health-title">字典库健康概览</h3>
+                  <div class="health-stats-container">
+                    <div class="health-stat-card primary-stat">
+                      <div class="stat-value">{{ dictList.length }}</div>
+                      <div class="stat-label">核心资产字典数</div>
+                    </div>
+                    <div class="health-stat-card warning-stat">
+                      <div class="stat-value">{{ bruteDictList.length }}</div>
+                      <div class="stat-label">弱口令字典数</div>
+                    </div>
+                  </div>
+                  <div class="health-hint">
+                    <span class="pulse-dot"></span>
+                    <span>系统状态良好，请在左侧选择要管理的字典文件</span>
                   </div>
                 </div>
-                <div style="font-size: 13px; color: var(--arl-text-color); opacity: 0.45; margin-top: 24px;">👈 请在左侧选择要管理的字典文件</div>
               </div>
 
-              <!-- 统一操作面板（沉浸式预览与悬浮操作） -->
-              <div v-else style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
-                <!-- 头部标题与操作栏 -->
-                <div style="padding: 24px; border-bottom: 1px solid var(--arl-border-color); display: flex; justify-content: space-between; align-items: flex-start; background: var(--arl-bg-white); flex-shrink: 0;">
+              <!-- 统一操作面板（沉浸式代码编辑器预览与悬浮操作） -->
+              <div v-else class="native-preview-container">
+                <!-- 顶部固定操作栏 -->
+                <div class="native-toolbar">
                    <div>
-                     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-                       <h3 style="margin: 0; font-size: 18px; font-weight: 600; color: var(--arl-text-color);">{{ unifiedSelectedName }}</h3>
+                     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
+                       <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--arl-text-color);">{{ unifiedSelectedName }}</h3>
                        <a-tag :color="unifiedSelectedType === 'asset' ? 'blue' : 'orange'" style="margin: 0;">
-                         {{ unifiedSelectedType === 'asset' ? '资产发现字典' : '弱口令字典' }}
+                         {{ unifiedSelectedType === 'asset' ? '资产发现' : '弱口令' }}
                        </a-tag>
                      </div>
-                     <div style="color: var(--arl-text-color); opacity: 0.65; font-size: 13px;">{{ unifiedSelectedDesc }} | 共 <span style="font-weight: 600; color: var(--arl-text-color);">{{ totalLines }}</span> 行记录</div>
+                     <div style="color: var(--arl-text-color); opacity: 0.55; font-size: 12px; font-family: 'Fira Code', monospace;">{{ unifiedSelectedDesc }} | Total: {{ totalLines }} lines</div>
                    </div>
-                   <div style="display: flex; gap: 12px;">
+                   <div style="display: flex; gap: 8px;">
+                      <a-popconfirm
+                        title="确定要彻底删除该字典文件吗？此操作不可逆！"
+                        placement="bottomRight"
+                        @confirm="handleDeleteDict"
+                      >
+                        <a-button danger>
+                          <template #icon><span style="margin-right:4px;">🗑️</span></template> 删除选中
+                        </a-button>
+                      </a-popconfirm>
                      <a-button @click="searchDrawerVisible = true">
-                       <template #icon><span style="margin-right:4px;">🔍</span></template> 检索与清理
+                       <template #icon><span style="margin-right:4px;">🔍</span></template> 检索清理
                      </a-button>
                      <a-button type="primary" @click="appendDrawerVisible = true">
                        <template #icon><span style="margin-right:4px;">➕</span></template> 追加数据
@@ -77,17 +126,22 @@
                    </div>
                 </div>
                 
-                <!-- 沉浸式内容预览 -->
-                <div style="flex: 1; overflow-y: auto; padding: 24px; background: transparent;">
-                   <div style="background: var(--arl-bg-white); border-radius: 8px; border: 1px solid var(--arl-border-color); padding: 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
-                     <div style="font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 13px; color: var(--arl-text-color); line-height: 1.6; white-space: pre-wrap; word-break: break-all;">
-                       <div v-if="!previewContent" style="color: var(--arl-text-color); opacity: 0.25; text-align: center; padding: 60px 0;">该字典暂无内容</div>
-                       <template v-else>{{ previewContent }}</template>
-                     </div>
-                     <div v-if="totalLines > previewLimit" style="text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px dashed var(--arl-border-color); color: var(--arl-text-color); opacity: 0.45; font-size: 12px;">
-                       仅预览前 {{ previewLimit }} 行内容
-                     </div>
-                   </div>
+                <!-- 极简内容预览区 -->
+                <div class="native-preview-area hide-scrollbar">
+                  <div class="native-code-wrapper">
+                    <div class="native-line-numbers" v-if="previewContent">
+                      <div v-for="n in previewLinesCount" :key="n" class="line-number">{{ n }}</div>
+                    </div>
+                    <div class="native-code-content">
+                      <div v-if="!previewContent" class="empty-code">
+                        <span>/* 该字典暂无内容 */</span>
+                      </div>
+                      <pre v-else class="code-text">{{ previewContent }}</pre>
+                      <div v-if="totalLines > previewLimit" class="code-limit-hint">
+                        // 仅预览前 {{ previewLimit }} 行内容...
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -95,16 +149,106 @@
           </div>
         </a-spin>
 
-        <!-- 追加数据抽屉 -->
+        <!-- 新建字典抽屉 -->
+        <a-drawer v-model:open="createDictDrawerVisible" title="新建字典" placement="right" width="450" @close="resetCreateDictForm">
+          <a-tabs v-model:activeKey="createDictTabKey">
+            <!-- 手动输入新建 -->
+            <a-tab-pane key="manual" tab="手动输入新建">
+              <div style="margin-bottom: 16px; color: var(--arl-text-color); font-size: 13px;">请选择字典分类并输入初始内容，系统将自动创建 .txt 文件。</div>
+              <a-form layout="vertical">
+                <a-form-item label="字典分类" required>
+                  <a-select v-model:value="createDictForm.prefix">
+                    <a-select-option value="domain_">🌍 子域名爆破 (domain_)</a-select-option>
+                    <a-select-option value="altdns_">🧠 智能子域爆破 (altdns_)</a-select-option>
+                    <a-select-option value="file_">📂 目录文件泄露 (file_)</a-select-option>
+                    <a-select-option value="black">🛡️ 全局黑名单拦截 (black*)</a-select-option>
+                    <a-select-option value="port_">🔌 端口扫描策略 (port_)</a-select-option>
+                    <a-select-option value="dnsserver_">🌐 DNS 解析配置 (dnsserver_)</a-select-option>
+                    <a-select-option value="username_">👤 弱口令账号 (username_)</a-select-option>
+                    <a-select-option value="password_">🔑 弱口令密码 (password_)</a-select-option>
+                  </a-select>
+                </a-form-item>
+                <a-form-item label="字典名称 (仅英文、数字、下划线)" required>
+                  <a-input v-model:value="createDictForm.customName" placeholder="例如: top100" />
+                </a-form-item>
+                <a-form-item label="初始字典内容 (可选)">
+                  <a-textarea v-model:value="createDictForm.content" placeholder="每行一个条目，支持批量粘贴" :rows="8" />
+                </a-form-item>
+              </a-form>
+              <div style="text-align: right; margin-top: 24px;">
+                <a-button @click="createDictDrawerVisible = false" style="margin-right: 8px;">取消</a-button>
+                <a-button type="primary" :loading="createDictLoading" :disabled="!isCreateDictValid" @click="handleCreateDictManual">确定新建</a-button>
+              </div>
+            </a-tab-pane>
+
+            <!-- 文件上传新建 -->
+            <a-tab-pane key="upload" tab="文件上传新建">
+              <div style="margin-bottom: 16px; color: var(--arl-text-color); font-size: 13px;">请选择字典分类并上传一个包含条目的 .txt 文件，我们将自动进行去重。</div>
+              <a-form layout="vertical">
+                <a-form-item label="字典分类" required>
+                  <a-select v-model:value="createDictForm.prefix">
+                    <a-select-option value="domain_">🌍 子域名爆破 (domain_)</a-select-option>
+                    <a-select-option value="altdns_">🧠 智能子域爆破 (altdns_)</a-select-option>
+                    <a-select-option value="file_">📂 目录文件泄露 (file_)</a-select-option>
+                    <a-select-option value="black">🛡️ 全局黑名单拦截 (black*)</a-select-option>
+                    <a-select-option value="port_">🔌 端口扫描策略 (port_)</a-select-option>
+                    <a-select-option value="dnsserver_">🌐 DNS 解析配置 (dnsserver_)</a-select-option>
+                  </a-select>
+                </a-form-item>
+                <a-form-item label="字典名称 (仅英文、数字、下划线)" required>
+                  <a-input v-model:value="createDictForm.customName" placeholder="例如: top100" />
+                </a-form-item>
+                <a-form-item label="选择字典文件 (.txt)" required>
+                  <a-upload :file-list="createDictForm.fileList" :before-upload="(f) => { createDictForm.fileList = [f]; return false; }" @remove="createDictForm.fileList = []" accept=".txt">
+                    <a-button><template #icon>📁</template> 点击选择文件</a-button>
+                  </a-upload>
+                </a-form-item>
+              </a-form>
+              <div style="text-align: right; margin-top: 24px;">
+                <a-button @click="handleCreateDictUploadCancel" style="margin-right: 8px;">取消</a-button>
+                <a-button type="primary" :loading="createDictLoading" :disabled="!isCreateDictValid || createDictForm.fileList.length === 0" @click="handleCreateDictUpload">开始上传并新建</a-button>
+              </div>
+            </a-tab-pane>
+          </a-tabs>
+        </a-drawer>
+
+        <!-- 上传字典弹窗 -->
+        <!-- 追加数据抽屉（合并手动输入与大文件上传） -->
         <a-drawer v-model:open="appendDrawerVisible" title="追加字典数据" placement="right" width="450">
-          <div style="margin-bottom: 12px; color: var(--arl-text-color); font-size: 13px;">请粘贴要追加的条目（每行一个）：</div>
-          <a-textarea v-model:value="newEntries" :rows="25" placeholder="例如：
+          <a-tabs v-model:activeKey="appendMode" style="margin-bottom: 16px;">
+            <a-tab-pane key="text" tab="手动粘贴">
+              <div style="margin-bottom: 12px; color: var(--arl-text-color); font-size: 13px;">请粘贴要追加的条目（每行一个）：</div>
+              <a-textarea v-model:value="newEntries" :rows="22" placeholder="例如：
 admin
 root" style="font-family: monospace; font-size: 12px; margin-bottom: 24px;" />
-          <div style="display: flex; justify-content: flex-end; gap: 12px;">
-            <a-button @click="appendDrawerVisible = false">取消</a-button>
-            <a-button type="primary" @click="handleAppendAndClose" :loading="submitLoading" :disabled="!newEntries.trim()">提交保存</a-button>
-          </div>
+              <div style="display: flex; justify-content: flex-end; gap: 12px;">
+                <a-button @click="appendDrawerVisible = false">取消</a-button>
+                <a-button type="primary" @click="handleAppendAndClose" :loading="submitLoading" :disabled="!newEntries.trim()">提交保存</a-button>
+              </div>
+            </a-tab-pane>
+            <a-tab-pane key="file" tab="文件上传">
+              <div>
+                <div style="margin-bottom: 16px; color: var(--arl-text-color); font-size: 13px;">
+                  支持上传数百万行的 TXT 文本，后台将自动去重并合并到当前字典中。
+                </div>
+                <a-upload-dragger
+                  name="file"
+                  :multiple="false"
+                  :customRequest="handleLargeUpload"
+                  accept=".txt"
+                  :showUploadList="false"
+                >
+                  <p class="ant-upload-drag-icon" style="font-size: 48px; margin-bottom: 16px;">
+                    📄
+                  </p>
+                  <p class="ant-upload-text">点击或将 TXT 文件拖拽到这里上传</p>
+                  <p class="ant-upload-hint">
+                    仅支持纯文本格式，每行一个词条
+                  </p>
+                </a-upload-dragger>
+              </div>
+            </a-tab-pane>
+          </a-tabs>
         </a-drawer>
 
         <!-- 搜索清理抽屉 -->
@@ -148,69 +292,188 @@ admin123
 
       <!-- CDN 字典管理 Tab -->
       <a-tab-pane key="cdn" tab="CDN字典管理" force-render>
-        <div style="margin-bottom: 16px; display: flex; justify-content: space-between;">
-          <div style="display: flex; gap: 8px;">
-            <a-button type="primary" @click="openCdnModal()">添加CDN特征</a-button>
-            <a-upload
-              name="file"
-              :show-upload-list="false"
-              :customRequest="handleCdnImport"
-              accept=".json"
-            >
-              <a-button>一键导入CDN</a-button>
-            </a-upload>
-          </div>
-          <a-button type="primary" @click="saveCdnData" :loading="cdnSaveLoading">保存全量更改到服务器</a-button>
-        </div>
-        
-        <a-table 
-          :dataSource="cdnList" 
-          :columns="cdnColumns" 
-          rowKey="name"
-          :pagination="{ pageSize: 20 }"
-          size="middle"
-          :loading="cdnLoading"
-        >
-          <template #bodyCell="{ column, record, index }">
-            <template v-if="column.key === 'cname_domain'">
-              <div style="max-height: 100px; overflow-y: auto;">
-                <a-tag v-for="cname in (record.cname_domain || [])" :key="cname" color="blue" style="margin-bottom: 4px;">{{ cname }}</a-tag>
+        <a-spin :spinning="cdnLoading">
+          <div style="display: flex; gap: 0; height: calc(100vh - 180px); min-height: 580px; border-radius: 12px; overflow: hidden; box-shadow: 0 12px 48px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.04); border: 1px solid rgba(0,0,0,0.05); background: var(--arl-bg-white);"> 
+            
+            <!-- 左侧：CDN 列表 -->
+            <div style="width: 256px; flex-shrink: 0; border-right: 1px solid var(--arl-border-color); background: var(--arl-bg-white); display: flex; flex-direction: column;">
+              <div style="padding: 16px; border-bottom: 1px solid var(--arl-border-color); min-height: 64px; box-sizing: border-box;">
+                <div style="display: flex; gap: 8px;">
+                  <a-input-search v-model:value="cdnSearchText" placeholder="搜索 CDN..." style="flex: 1; border-radius: 4px;" />
+                  <a-button 
+                    v-if="isCdnDirty" 
+                    type="primary" 
+                    class="breathing-btn" 
+                    @click="saveCdnData" 
+                    :loading="cdnSaveLoading" 
+                    style="padding: 0 8px; background-color: #52c41a; border-color: #52c41a;" 
+                    title="有未保存的更改"
+                  >
+                    <template #icon><span style="margin-right:0px;">💾</span></template>
+                  </a-button>
+                  <a-button type="primary" @click="openCdnDrawer" style="padding: 0 8px;" title="添加CDN特征">
+                    <template #icon><span style="margin-right:0px;">➕</span></template>
+                  </a-button>
+                </div>
               </div>
-            </template>
-            <template v-else-if="column.key === 'ip_cidr'">
-              <div style="max-height: 100px; overflow-y: auto;">
-                <a-tag v-for="ip in (record.ip_cidr || [])" :key="ip" color="green" style="margin-bottom: 4px;">{{ ip }}</a-tag>
+              <div class="hide-scrollbar" style="flex: 1; overflow-y: auto; padding: 12px 8px;">
+                <div v-if="filteredCdnList.length === 0" style="padding: 48px 24px; text-align: center; color: var(--arl-text-color); opacity: 0.65; display: flex; flex-direction: column; align-items: center; gap: 12px;">
+                  <span style="font-size: 32px; opacity: 0.8;">📭</span>
+                  <span style="font-size: 13px; font-weight: 500;">未找到 CDN</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <div
+                    v-for="item in filteredCdnList" :key="item.name"
+                    class="custom-list-item"
+                    :class="{ 'is-active': selectedCdnName === item.name }"
+                    @click="selectedCdnName = item.name"
+                  >
+                    <div style="display: flex; align-items: flex-start; gap: 8px;">
+                      <span style="font-size: 16px; margin-top: 2px; opacity: 0.9;">🌐</span>
+                      <div style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0;">
+                        <span class="dict-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500;">{{ item.name }}</span>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                          <span class="dict-subtitle">{{ (item.cname_domain || []).length }} CNAME, {{ (item.ip_cidr || []).length }} IPs</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </template>
-            <template v-else-if="column.key === 'action'">
-              <a-button type="link" @click="openCdnModal(record, index)">编辑</a-button>
-              <a-popconfirm title="确定要删除该CDN特征吗？此操作需点击右上角保存后才能持久化" @confirm="deleteCdnItem(index)">
-                <a-button type="link" danger>删除</a-button>
-              </a-popconfirm>
-            </template>
-          </template>
-        </a-table>
+            </div>
 
-        <!-- CDN 编辑弹窗 -->
-        <a-modal
-          v-model:open="cdnModalVisible"
+            <!-- 右侧：详情面板 -->
+            <div style="flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; background: var(--arl-bg-white); position: relative;">
+              <!-- 健康概览 -->
+              <div v-if="!selectedCdn" class="health-dashboard-wrapper">
+                <div class="health-dashboard-bg"></div>
+                <div class="health-content">
+                  <div class="health-icon-pulse">
+                    <span style="font-size: 56px;">🌍</span>
+                  </div>
+                  <h3 class="health-title">CDN 数据健康概览</h3>
+                  <div class="health-stats-container">
+                    <div class="health-stat-card primary-stat">
+                      <div class="stat-value">{{ cdnList.length }}</div>
+                      <div class="stat-label">总计 CDN 厂商</div>
+                    </div>
+                    <div class="health-stat-card warning-stat">
+                      <div class="stat-value">{{ totalCnameCount }}</div>
+                      <div class="stat-label">CNAME 规则总数</div>
+                    </div>
+                    <div class="health-stat-card danger-stat" style="background: rgba(245, 34, 45, 0.04); border: 1px solid rgba(245, 34, 45, 0.1);">
+                      <div class="stat-value" style="color: #cf1322;">{{ totalIpCount }}</div>
+                      <div class="stat-label" style="color: #cf1322;">IP 段规则总数</div>
+                    </div>
+                  </div>
+                  <div class="health-hint">
+                    <span class="pulse-dot"></span>
+                    <span>状态良好，请在左侧选择特定 CDN 进行管理</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- CDN 详情与编辑 -->
+              <div v-else class="native-preview-container">
+                <div class="native-toolbar">
+                   <div>
+                     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 4px;">
+                       <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: var(--arl-text-color);">{{ selectedCdn.name }}</h3>
+                       <a-tag color="cyan" style="margin: 0;">CDN特征</a-tag>
+                     </div>
+                     <div style="color: var(--arl-text-color); opacity: 0.55; font-size: 12px;">包含 {{ (selectedCdn.cname_domain || []).length }} 条 CNAME，{{ (selectedCdn.ip_cidr || []).length }} 条 IP 段</div>
+                   </div>
+                   <div style="display: flex; gap: 8px; align-items: center;">
+                      <a-button 
+                        v-if="isCdnDirty" 
+                        type="primary" 
+                        @click="saveCdnData" 
+                        :loading="cdnSaveLoading"
+                        class="breathing-btn"
+                        style="background-color: #52c41a; border-color: #52c41a;"
+                      >
+                        <template #icon><span style="margin-right:4px;">💾</span></template> 保存更改
+                      </a-button>
+                      <a-popconfirm title="确定要删除该 CDN 吗？需保存全量更改后生效。" placement="bottomRight" @confirm="deleteSelectedCdn">
+                        <a-button danger><template #icon><span style="margin-right:4px;">🗑️</span></template> 删除特征</a-button>
+                      </a-popconfirm>
+                      <a-button type="primary" ghost @click="editSelectedCdn"><template #icon><span style="margin-right:4px;">✏️</span></template> 编辑特征</a-button>
+                   </div>
+                </div>
+
+                <!-- 极简内容预览区 (双区块) -->
+                <div class="native-preview-area hide-scrollbar" style="display: flex; flex-direction: column; gap: 16px; padding-bottom: 24px;">
+                  
+                  <!-- CNAME 规则 -->
+                  <div class="native-code-wrapper" style="flex: none; display: flex; flex-direction: column; padding: 0;">
+                    <div style="padding: 8px 16px; background: rgba(0,0,0,0.02); border-bottom: 1px solid var(--arl-border-color); font-weight: 500; font-size: 13px; color: var(--arl-text-color);">
+                      🌍 CNAME 规则 ({{ (selectedCdn.cname_domain || []).length }})
+                    </div>
+                    <div style="display: flex; position: relative; padding: 16px;">
+                      <div class="native-line-numbers" v-if="selectedCdn.cname_domain && selectedCdn.cname_domain.length > 0">
+                        <div v-for="n in selectedCdn.cname_domain.length" :key="'cname-'+n" class="line-number">{{ n }}</div>
+                      </div>
+                      <div class="native-code-content" style="min-height: 40px;">
+                        <div v-if="!(selectedCdn.cname_domain && selectedCdn.cname_domain.length > 0)" class="empty-code" style="padding-top: 0;">
+                          <span>/* 暂无 CNAME 规则 */</span>
+                        </div>
+                        <pre v-else class="code-text">{{ selectedCdn.cname_domain.join('\n') }}</pre>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- IP CIDR 规则 -->
+                  <div class="native-code-wrapper" style="flex: none; display: flex; flex-direction: column; padding: 0;">
+                    <div style="padding: 8px 16px; background: rgba(0,0,0,0.02); border-bottom: 1px solid var(--arl-border-color); font-weight: 500; font-size: 13px; color: var(--arl-text-color);">
+                      🔌 IP CIDR 规则 ({{ (selectedCdn.ip_cidr || []).length }})
+                    </div>
+                    <div style="display: flex; position: relative; padding: 16px;">
+                      <div class="native-line-numbers" v-if="selectedCdn.ip_cidr && selectedCdn.ip_cidr.length > 0">
+                        <div v-for="n in selectedCdn.ip_cidr.length" :key="'ip-'+n" class="line-number">{{ n }}</div>
+                      </div>
+                      <div class="native-code-content" style="min-height: 40px;">
+                        <div v-if="!(selectedCdn.ip_cidr && selectedCdn.ip_cidr.length > 0)" class="empty-code" style="padding-top: 0;">
+                          <span>/* 暂无 IP CIDR 规则 */</span>
+                        </div>
+                        <pre v-else class="code-text">{{ selectedCdn.ip_cidr.join('\n') }}</pre>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </a-spin>
+
+        <a-drawer
+          v-model:open="cdnDrawerVisible"
           :title="isEditingCdn ? '编辑CDN特征' : '添加CDN特征'"
-          @ok="submitCdnModal"
-          width="700px"
-          destroyOnClose
+          placement="right"
+          width="450"
+          @close="resetCdnForm"
         >
-          <a-form :model="currentCdnForm" :label-col="{ span: 4 }" :wrapper-col="{ span: 19 }" style="margin-top: 20px;">
-            <a-form-item label="CDN名称" required>
-              <a-input v-model:value="currentCdnForm.name" placeholder="例如：阿里云CDN" />
-            </a-form-item>
-            <a-form-item label="CNAME后缀">
-              <a-textarea v-model:value="currentCdnForm.cnameText" :rows="4" placeholder="每行输入一个CNAME后缀，如: kunlunpi.com" />
-            </a-form-item>
-            <a-form-item label="IP网段(CIDR)">
-              <a-textarea v-model:value="currentCdnForm.ipText" :rows="4" placeholder="每行输入一个IP网段，如: 103.21.244.0/22" />
-            </a-form-item>
-          </a-form>
-        </a-modal>
+          <div style="display: flex; flex-direction: column; height: 100%;">
+            <div class="hide-scrollbar" style="flex: 1; overflow-y: auto; padding-right: 4px;">
+              <a-form :model="currentCdnForm" layout="vertical">
+                <a-form-item label="CDN名称" required>
+                  <a-input v-model:value="currentCdnForm.name" placeholder="例如：阿里云CDN" />
+                </a-form-item>
+                <a-form-item label="CNAME后缀">
+                  <a-textarea v-model:value="currentCdnForm.cnameText" :rows="8" placeholder="每行输入一个CNAME后缀，如: kunlunpi.com" />
+                </a-form-item>
+                <a-form-item label="IP网段(CIDR)">
+                  <a-textarea v-model:value="currentCdnForm.ipText" :rows="8" placeholder="每行输入一个IP网段，如: 103.21.244.0/22" />
+                </a-form-item>
+              </a-form>
+            </div>
+            <div style="border-top: 1px solid var(--arl-border-color); padding-top: 16px; text-align: right; margin-top: 16px;">
+              <a-button @click="cdnDrawerVisible = false" style="margin-right: 8px;">取消</a-button>
+              <a-button type="primary" @click="submitCdnDrawer">确定保存</a-button>
+            </div>
+          </div>
+        </a-drawer>
       </a-tab-pane>
 
       <!-- 安全策略管理 Tab -->
@@ -304,6 +567,33 @@ admin123
                       <a-input-number v-model:value="performanceForm.celery_light_concurrency" :min="1" :max="256" style="width: 100%" />
                       <div style="margin-top: 8px; color: var(--arl-text-color); opacity: 0.45; font-size: 13px;">
                         走专用独立通道，不受重任务排队阻塞影响。可以根据带宽资源按需放大 (默认 2)。
+                      </div>
+                    </a-form-item>
+                  </a-card>
+                </a-col>
+              </a-row>
+              <a-row :gutter="24">
+                <a-col :span="12">
+                  <a-card title="🌍 外网情报侦察任务调度" size="small" style="margin-bottom: 16px; border-radius: 6px; border-left: 4px solid #1890ff;">
+                    <a-form-item>
+                      <template #label>
+                        OSINT 任务并发数
+                        <a-popover placement="right">
+                          <template #content>
+                            <div style="max-width: 320px;">
+                              <div style="font-weight: bold; margin-bottom: 8px;">[分配规则] 外网情报侦察任务：</div>
+                              <ul style="padding-left: 18px; margin: 0; line-height: 1.8;">
+                                <li>ICP 备案查询 (网站/APP/小程序)</li>
+                                <li>天眼查 (TYC) 股权穿透与资产收集</li>
+                              </ul>
+                            </div>
+                          </template>
+                          <InfoCircleOutlined style="margin-left: 4px; color: #888; cursor: pointer;" />
+                        </a-popover>
+                      </template>
+                      <a-input-number v-model:value="performanceForm.osint_concurrency" :min="1" :max="128" style="width: 100%" />
+                      <div style="margin-top: 8px; color: var(--arl-text-color); opacity: 0.45; font-size: 13px;">
+                        控制 OSINT 模块对外部目标（如天眼查、工信部备案等）的并发请求数。建议保持默认值 1，避免因外网请求过快导致接口熔断或 IP 被封禁。修改后将在 10 秒内由后台看门狗自动热更新生效。
                       </div>
                     </a-form-item>
                   </a-card>
@@ -634,18 +924,6 @@ admin123
                 </a-col>
               </a-row>
 
-              <a-row :gutter="24">
-                <a-col :span="12">
-                  <a-form-item label="文件泄露字典路径 (FILE_LEAK_DICT)">
-                    <a-input v-model:value="generalForm.file_leak_dict" placeholder="字典文件绝对路径" />
-                  </a-form-item>
-                </a-col>
-                <a-col :span="12">
-                  <a-form-item label="域名爆破默认大字典路径 (DOMAIN_DICT)">
-                    <a-input v-model:value="generalForm.domain_dict" placeholder="字典文件绝对路径" />
-                  </a-form-item>
-                </a-col>
-              </a-row>
 
               <a-row :gutter="24">
                 <a-col :span="12">
@@ -739,8 +1017,7 @@ admin123
 
 <script setup>
 import { InfoCircleOutlined, ThunderboltOutlined } from '@ant-design/icons-vue';
-import { ref, reactive, onMounted, onUnmounted, computed, nextTick } from 'vue';
-import { message } from 'ant-design-vue';
+import { ref, reactive, onMounted, onUnmounted, computed, nextTick, watch } from 'vue';import { message } from 'ant-design-vue';
 import request from '@/utils/request';
 import { useRoute } from 'vue-router';
 
@@ -757,11 +1034,195 @@ const deleteLoading = ref(false);
 
 const menuSearch = ref('');
 const menuOpenKeys = ref([]);
+// ======================= 新建字典模块 =======================
+const createDictDrawerVisible = ref(false);
+const createDictTabKey = ref('manual');
+const createDictLoading = ref(false);
+const createDictForm = reactive({
+  prefix: 'domain_',
+  customName: '',
+  content: '',
+  fileList: []
+});
+
+const openCreateDictDrawer = () => {
+  createDictDrawerVisible.value = true;
+  if (selectedCategoryKeys.value.length > 0) {
+    const key = selectedCategoryKeys.value[0];
+    if (key.includes('子域名爆破')) {
+      createDictForm.prefix = 'domain_';
+    } else if (key.includes('目录文件泄露')) {
+      createDictForm.prefix = 'file_';
+    } else if (key.includes('端口扫描策略')) {
+      createDictForm.prefix = 'port_';
+    } else if (key.includes('全局黑名单拦截')) {
+      createDictForm.prefix = 'black';
+    } else if (key.includes('group_brute_')) {
+      createDictForm.prefix = 'username_';
+    }
+  }
+};
+
+const isCreateDictValid = computed(() => {
+  return createDictForm.customName && /^[a-zA-Z0-9_]+$/.test(createDictForm.customName);
+});
+
+const resetCreateDictForm = () => {
+  createDictForm.prefix = 'domain_';
+  createDictForm.customName = '';
+  createDictForm.content = '';
+  createDictForm.fileList = [];
+  createDictTabKey.value = 'manual';
+};
+
+const handleCreateDictManual = async () => {
+  let targetName = `${createDictForm.prefix}${createDictForm.customName}.txt`;
+  
+  createDictLoading.value = true;
+  try {
+    const res = await request.post('/api/dictionary/create', {
+      name: targetName,
+      content: createDictForm.content
+    });
+    if (res.code === 200) {
+      message.success(`字典 ${targetName} 新建成功！`);
+      createDictDrawerVisible.value = false;
+      resetCreateDictForm();
+      fetchDictList();
+    } else {
+      message.error(res.message || '新建失败');
+    }
+  } catch (error) {
+    message.error('新建请求出错');
+  } finally {
+    createDictLoading.value = false;
+  }
+};
+
+const handleCreateDictUploadCancel = () => {
+  if (createDictLoading.value) {
+    message.warning('正在上传中，请勿取消');
+    return;
+  }
+  createDictDrawerVisible.value = false;
+  resetCreateDictForm();
+};
+
+const handleCreateDictUpload = async () => {
+  let targetName = `${createDictForm.prefix}${createDictForm.customName}.txt`;
+
+  const file = createDictForm.fileList[0];
+  if (!file) return;
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('name', targetName);
+
+  createDictLoading.value = true;
+  try {
+    const res = await request.post('/api/dictionary/upload_large', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    if (res.code === 200) {
+      const hideMsg = message.loading(`字典 ${targetName} 正在后台导入中，您可以继续其他操作...`, 0);
+      createDictDrawerVisible.value = false;
+      resetCreateDictForm();
+      
+      const pollTimer = setInterval(async () => {
+        try {
+          const statusRes = await request.get('/api/dictionary/upload_status', { params: { task_id: res.task_id } });
+          if (statusRes.code === 200) {
+            if (statusRes.data.status === 'completed') {
+              clearInterval(pollTimer);
+              hideMsg();
+              message.success(`字典 ${targetName} 导入完成！新增 ${statusRes.data.inserted_lines} 条，忽略重复 ${statusRes.data.ignored_lines} 条`);
+              fetchDictList(false);
+            } else if (statusRes.data.status === 'error') {
+              clearInterval(pollTimer);
+              hideMsg();
+              message.error(`导入 ${targetName} 失败: ${statusRes.data.message}`);
+            }
+          }
+        } catch (e) {
+          // 忽略轮询时的网络抖动
+        }
+      }, 2000);
+    } else {
+      message.error(res.message || '上传失败');
+    }
+  } catch (error) {
+    message.error('上传请求出错');
+  } finally {
+    createDictLoading.value = false;
+  }
+};
+
+// ======================= 追加字典逻辑 =======================
 const appendDrawerVisible = ref(false);
+const appendMode = ref('text');
+
+// 上传字典状态
+// 执行大文件上传
+const handleLargeUpload = async (info) => {
+  const file = info.file;
+  if (!file) return;
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('name', unifiedSelectedName.value);
+  
+  const targetName = unifiedSelectedName.value;
+  const currentType = unifiedSelectedType.value;
+  
+  const uploadUrl = currentType === 'asset' ? '/api/dictionary/upload_large' : '/api/brute_dict/upload_large';
+  const statusUrl = currentType === 'asset' ? '/api/dictionary/upload_status' : '/api/brute_dict/upload_status';
+
+  try {
+    const res = await request.post(uploadUrl, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+
+    if (res.code === 200) {
+      const hideMsg = message.loading(`字典 ${targetName} 正在后台追加导入中，您可以继续其他操作...`, 0);
+      appendDrawerVisible.value = false;
+      
+      const pollTimer = setInterval(async () => {
+        try {
+          const statusRes = await request.get(statusUrl, { params: { task_id: res.task_id } });
+          if (statusRes.code === 200) {
+            if (statusRes.data.status === 'completed') {
+              clearInterval(pollTimer);
+              hideMsg();
+              message.success(`字典 ${targetName} 追加导入完成！新增 ${statusRes.data.inserted_lines} 条，忽略重复 ${statusRes.data.ignored_lines} 条`);
+              
+              if (currentType === 'asset') {
+                fetchDictList(false);
+                fetchDictPreview(targetName);
+              } else {
+                fetchBruteDictList(false);
+                fetchBruteDictPreview(targetName);
+              }
+            } else if (statusRes.data.status === 'error') {
+              clearInterval(pollTimer);
+              hideMsg();
+              message.error(`字典 ${targetName} 追加失败: ${statusRes.data.message}`);
+            }
+          }
+        } catch (e) {
+          // 忽略轮询时的网络抖动
+        }
+      }, 2000);
+    } else {
+      message.error(res.message || '上传失败');
+    }
+  } catch (error) {
+    message.error('网络或服务器错误');
+  }
+};
 const searchDrawerVisible = ref(false);
 const batchDeleteEntries = ref('');
-
-import { watch } from 'vue';
 
 const generalLoading = ref(false);
 const generalSaveLoading = ref(false);
@@ -829,8 +1290,7 @@ const generalForm = ref({
   domain_brute_concurrent: 300,
   alt_dns_concurrent: 1500,
   
-  file_leak_dict: '',
-  domain_dict: '',
+
   
   auth: false,
   api_key: '',
@@ -897,33 +1357,46 @@ const bruteDictList = ref([]);  // [{name, size}, ...]
 
 // ======================= 字典元数据配置 =======================
 const ASSET_DICT_META = {
-  'domain_2w.txt':       { label: '子域名爆破主字典 (2万)', group: '📍 子域名发现模块调用' },
-  'altdnsdict.txt':      { label: '子域名智能生成辅助词',   group: '📍 子域名发现模块调用' },
-  'dnsserver.txt':       { label: 'DNS 解析服务器列表',     group: '📍 子域名发现模块调用' },
-  'file_top_200.txt':    { label: 'Top 200 路径字典',       group: '📍 目录与文件泄露扫描调用' },
-  'file_top_2000.txt':   { label: 'Top 2000 路径字典',      group: '📍 目录与文件泄露扫描调用' },
-  'file_test.txt':       { label: '测试路径字典',           group: '📍 目录与文件泄露扫描调用' },
-  'port_top100.txt':     { label: '常用 100 端口',          group: '📍 端口扫描策略调用' },
-  'port_top1000.txt':    { label: '常用 1000 端口',         group: '📍 端口扫描策略调用' },
-  'port_custom.txt':     { label: '自定义端口',             group: '📍 端口扫描策略调用' },
-  'port_all.txt':        { label: '全端口 (1-65535)',       group: '📍 端口扫描策略调用' },
-  'port_test.txt':       { label: '测试端口',               group: '📍 端口扫描策略调用' },
-  'blackdomain.txt':     { label: '根域名爆破拦截字典',     group: '🛡️ 系统全局黑名单拦截' },
-  'black_asset_site.txt':{ label: '恶意/干扰站点拦截字典',  group: '🛡️ 系统全局黑名单拦截' },
-  'blackhexie.txt':      { label: '敏感词汇过滤字典',       group: '🛡️ 系统全局黑名单拦截' },
+  'domain_2w.txt':       { label: '子域名爆破主字典 (2万)', group: '🌍 子域名爆破' },
+  'altdnsdict.txt':      { label: '子域名智能生成辅助词',   group: '🧠 智能子域爆破' },
+  'dnsserver.txt':       { label: 'DNS 解析服务器列表',     group: '🌐 DNS 解析配置' },
+  'file_top_200.txt':    { label: 'Top 200 路径字典',       group: '📂 目录文件泄露' },
+  'file_top_2000.txt':   { label: 'Top 2000 路径字典',      group: '📂 目录文件泄露' },
+
+  'port_top100.txt':     { label: '常用 100 端口',          group: '🔌 端口扫描策略' },
+  'port_top1000.txt':    { label: '常用 1000 端口',         group: '🔌 端口扫描策略' },
+  'port_custom.txt':     { label: '自定义端口',             group: '🔌 端口扫描策略' },
+  'port_all.txt':        { label: '全端口 (1-65535)',       group: '🔌 端口扫描策略' },
+
+  'blackdomain.txt':     { label: '根域名爆破拦截字典',     group: '🛡️ 全局黑名单拦截' },
+  'black_asset_site.txt':{ label: '恶意/干扰站点拦截字典',  group: '🛡️ 全局黑名单拦截' },
+  'blackhexie.txt':      { label: '敏感词汇过滤字典',       group: '🛡️ 全局黑名单拦截' },
 };
 
-// 资产字典按调用方/使用地点分组
 const assetMenuGroups = computed(() => {
-  const groups = { '📍 子域名发现模块调用': [], '📍 目录与文件泄露扫描调用': [], '📍 端口扫描策略调用': [], '🛡️ 系统全局黑名单拦截': [], '其他（未分类调用）': [] };
+  const groups = { '🌍 子域名爆破': [], '🧠 智能子域爆破': [], '📂 目录文件泄露': [], '🔌 端口扫描策略': [], '🌐 DNS 解析配置': [], '🛡️ 全局黑名单拦截': [] };
+  
+  const getGroupAndLabel = (dictName) => {
+    if (ASSET_DICT_META[dictName]) {
+      return { group: ASSET_DICT_META[dictName].group, label: ASSET_DICT_META[dictName].label };
+    }
+    if (dictName.startsWith('domain_')) return { group: '🌍 子域名爆破', label: dictName };
+    if (dictName.startsWith('altdns_')) return { group: '🧠 智能子域爆破', label: dictName };
+    if (dictName.startsWith('dnsserver_')) return { group: '🌐 DNS 解析配置', label: dictName };
+    if (dictName.startsWith('file_')) return { group: '📂 目录文件泄露', label: dictName };
+    if (dictName.startsWith('black')) return { group: '🛡️ 全局黑名单拦截', label: dictName };
+    if (dictName.startsWith('port_')) return { group: '🔌 端口扫描策略', label: dictName };
+    return null;
+  };
+
   dictList.value.forEach(dict => {
-    const meta = ASSET_DICT_META[dict.name];
-    const g = meta ? meta.group : '其他（未分类调用）';
-    if (!groups[g]) groups[g] = [];
-    // 覆盖默认的 name 为更友好的 label，如果没有则显示原名
-    groups[g].push({
+    const meta = getGroupAndLabel(dict.name);
+    if (!meta) return;
+    
+    if (!groups[meta.group]) groups[meta.group] = [];
+    groups[meta.group].push({
       ...dict,
-      title: meta ? meta.label : dict.name
+      title: meta.label
     });
   });
   return groups;
@@ -991,7 +1464,7 @@ const treeData = computed(() => {
     }
   });
   if (npocChildren.length > 0) {
-    data.push({ title: '🔑 NPoC 弱口令爆破', key: 'group_brute_all', selectable: false, children: npocChildren });
+    data.push({ title: '🔑 弱口令字典', key: 'group_brute_all', children: npocChildren });
   }
   return data;
 });
@@ -1029,16 +1502,29 @@ const handleDeleteBatchCustom = async () => {
   batchDeleteEntries.value = '';
 };
 
+// 分类选择状态
+const selectedCategoryKeys = ref(['🌍 子域名爆破']); // 默认选中第一个分类
+
+const handleCategorySelect = ({ key }) => {
+  selectedCategoryKeys.value = [key];
+  menuSearch.value = '';
+};
+
 // 统一字典选择状态
 const unifiedSelectedKeys = ref([]);
 const unifiedSelectedType = ref('');  // 'asset' | 'brute'
 const unifiedSelectedName = ref('');
 const unifiedSelectedDesc = ref('');
 
+const currentFilteredDicts = computed(() => {
+  if (!selectedCategoryKeys.value.length) return [];
+  const activeKey = selectedCategoryKeys.value[0];
+  const group = filteredTreeData.value.find(g => g.key === activeKey);
+  return group ? group.children || [] : [];
+});
+
 const handleUnifiedSelect = (selectedKeys, info) => {
-  console.log('handleUnifiedSelect called', selectedKeys, info);
   const key = Array.isArray(selectedKeys) ? selectedKeys[0] : selectedKeys;
-  console.log('selected key resolved', key);
   unifiedSelectedKeys.value = [key];
   searchKeyword.value = '';
   searchResult.value = null;
@@ -1069,7 +1555,12 @@ const handleUnifiedSelect = (selectedKeys, info) => {
 
 const previewContent = ref('');
 const totalLines = ref(0);
-const previewLimit = ref(500);
+const previewLimit = ref(100);
+
+const previewLinesCount = computed(() => {
+  if (!previewContent.value) return 0;
+  return previewContent.value.split('\n').length;
+});
 
 const searchKeyword = ref('');
 const searchResult = ref(null);
@@ -1082,8 +1573,8 @@ const dictApiBase = computed(() =>
 );
 
 // 获取字典列表
-const fetchDictList = async () => {
-  loading.value = true;
+const fetchDictList = async (showLoading = true) => {
+  if (showLoading) loading.value = true;
   try {
     const res = await request.get('/api/dictionary/list');
     if (res.code === 200) {
@@ -1095,7 +1586,7 @@ const fetchDictList = async () => {
     message.error('请求字典列表出错');
     console.error(error);
   } finally {
-    loading.value = false;
+    if (showLoading) loading.value = false;
   }
 };
 
@@ -1208,6 +1699,41 @@ const handleDeleteSingle = async (item) => {
   }
 };
 
+// 删除选中字典文件
+const handleDeleteDict = async () => {
+  if (!selectedDict.value) return;
+  
+  loading.value = true;
+  try {
+    const res = await request.post(`${dictApiBase.value}/delete_file`, {
+      name: selectedDict.value
+    });
+    if (res.code === 200) {
+      message.success(`字典 ${selectedDict.value} 删除成功！`);
+      // 重置选中状态
+      unifiedSelectedKeys.value = [];
+      selectedDict.value = '';
+      previewContent.value = '';
+      totalLines.value = 0;
+      
+      // 重新拉取列表
+      if (unifiedSelectedType.value === 'brute') {
+        fetchBruteDictList();
+      } else {
+        fetchDictList();
+      }
+      unifiedSelectedType.value = '';
+    } else {
+      message.error(res.message || '删除失败');
+    }
+  } catch (error) {
+    message.error('请求删除出错');
+    console.error(error);
+  } finally {
+    loading.value = false;
+  }
+};
+
 // 公共删除逻辑（自动路由）
 const deleteEntries = async (content) => {
   deleteLoading.value = true;
@@ -1235,20 +1761,130 @@ const deleteEntries = async (content) => {
 
 // ======================= CDN 管理逻辑 =======================
 const cdnList = ref([]);
+const originalCdnList = ref([]);
 const cdnLoading = ref(false);
 const cdnSaveLoading = ref(false);
 
-const cdnColumns = [
-  { title: '名称', dataIndex: 'name', key: 'name', width: '20%' },
-  { title: 'CNAME域名', dataIndex: 'cname_domain', key: 'cname_domain', width: '35%' },
-  { title: 'IP网段', dataIndex: 'ip_cidr', key: 'ip_cidr', width: '30%' },
-  { title: '操作', key: 'action', width: '15%' }
-];
+const isCdnDirty = computed(() => {
+  return JSON.stringify(cdnList.value) !== JSON.stringify(originalCdnList.value);
+});
 
-const cdnModalVisible = ref(false);
+const cdnSearchText = ref('');
+const selectedCdnName = ref('');
+
+const filteredCdnList = computed(() => {
+  if (!cdnSearchText.value) return cdnList.value;
+  return cdnList.value.filter(item => 
+    item.name.toLowerCase().includes(cdnSearchText.value.toLowerCase())
+  );
+});
+
+const selectedCdn = computed(() => {
+  if (!selectedCdnName.value) return null;
+  return cdnList.value.find(item => item.name === selectedCdnName.value);
+});
+
+const totalCnameCount = computed(() => {
+  return cdnList.value.reduce((acc, curr) => acc + (curr.cname_domain || []).length, 0);
+});
+
+const totalIpCount = computed(() => {
+  return cdnList.value.reduce((acc, curr) => acc + (curr.ip_cidr || []).length, 0);
+});
+
+const previewCdnContent = computed(() => {
+  if (!selectedCdn.value) return '';
+  let lines = [];
+  if (selectedCdn.value.cname_domain && selectedCdn.value.cname_domain.length > 0) {
+    lines.push('// ==================== CNAME 特征 ====================');
+    lines = lines.concat(selectedCdn.value.cname_domain);
+  }
+  if (selectedCdn.value.ip_cidr && selectedCdn.value.ip_cidr.length > 0) {
+    if (lines.length > 0) lines.push('');
+    lines.push('// ==================== IP CIDR 特征 ====================');
+    lines = lines.concat(selectedCdn.value.ip_cidr);
+  }
+  return lines.join('\n');
+});
+
+const previewCdnLinesCount = computed(() => {
+  if (!previewCdnContent.value) return 0;
+  return previewCdnContent.value.split('\n').length;
+});
+
+
+const cdnDrawerVisible = ref(false);
 const isEditingCdn = ref(false);
+const currentCdnForm = reactive({
+  name: '',
+  cnameText: '',
+  ipText: ''
+});
 const currentEditIndex = ref(-1);
-const currentCdnForm = ref({ name: '', cnameText: '', ipText: '' });
+
+const openCdnDrawer = () => {
+  isEditingCdn.value = false;
+  currentEditIndex.value = -1;
+  currentCdnForm.name = '';
+  currentCdnForm.cnameText = '';
+  currentCdnForm.ipText = '';
+  cdnDrawerVisible.value = true;
+};
+
+const editSelectedCdn = () => {
+  if (!selectedCdn.value) return;
+  isEditingCdn.value = true;
+  currentEditIndex.value = cdnList.value.findIndex(c => c.name === selectedCdn.value.name);
+  currentCdnForm.name = selectedCdn.value.name;
+  currentCdnForm.cnameText = (selectedCdn.value.cname_domain || []).join('\n');
+  currentCdnForm.ipText = (selectedCdn.value.ip_cidr || []).join('\n');
+  cdnDrawerVisible.value = true;
+};
+
+const deleteSelectedCdn = () => {
+  if (!selectedCdn.value) return;
+  const index = cdnList.value.findIndex(c => c.name === selectedCdn.value.name);
+  if (index > -1) {
+    cdnList.value.splice(index, 1);
+    selectedCdnName.value = '';
+    message.success('已删除，请记得保存全量更改');
+  }
+};
+
+const resetCdnForm = () => {
+  cdnDrawerVisible.value = false;
+};
+
+const submitCdnDrawer = () => {
+  if (!currentCdnForm.name.trim()) {
+    message.warning('请输入 CDN 名称');
+    return;
+  }
+  const cname_domain = currentCdnForm.cnameText.split('\n').map(s => s.trim()).filter(s => s);
+  const ip_cidr = currentCdnForm.ipText.split('\n').map(s => s.trim()).filter(s => s);
+
+  if (isEditingCdn.value && currentEditIndex.value > -1) {
+    cdnList.value[currentEditIndex.value] = {
+      name: currentCdnForm.name.trim(),
+      cname_domain,
+      ip_cidr
+    };
+    selectedCdnName.value = currentCdnForm.name.trim();
+  } else {
+    if (cdnList.value.find(c => c.name === currentCdnForm.name.trim())) {
+      message.warning('该 CDN 名称已存在');
+      return;
+    }
+    cdnList.value.unshift({
+      name: currentCdnForm.name.trim(),
+      cname_domain,
+      ip_cidr
+    });
+    selectedCdnName.value = currentCdnForm.name.trim();
+  }
+  cdnDrawerVisible.value = false;
+};
+
 
 // 拉取 CDN 列表
 const fetchCdnList = async () => {
@@ -1257,6 +1893,7 @@ const fetchCdnList = async () => {
     const res = await request.get('/api/cdn_dict/list');
     if (res.code === 200) {
       cdnList.value = res.data || [];
+      originalCdnList.value = JSON.parse(JSON.stringify(cdnList.value));
     } else {
       message.error(res.message || '获取CDN列表失败');
     }
@@ -1268,56 +1905,6 @@ const fetchCdnList = async () => {
   }
 };
 
-// 打开新增/编辑弹窗
-const openCdnModal = (record = null, index = -1) => {
-  if (record) {
-    isEditingCdn.value = true;
-    currentEditIndex.value = index;
-    currentCdnForm.value = {
-      name: record.name || '',
-      cnameText: (record.cname_domain || []).join('\n'),
-      ipText: (record.ip_cidr || []).join('\n')
-    };
-  } else {
-    isEditingCdn.value = false;
-    currentEditIndex.value = -1;
-    currentCdnForm.value = { name: '', cnameText: '', ipText: '' };
-  }
-  cdnModalVisible.value = true;
-};
-
-// 提交本地编辑
-const submitCdnModal = () => {
-  if (!currentCdnForm.value.name.trim()) {
-    message.warning('请输入CDN名称');
-    return;
-  }
-  
-  const cname_domain = currentCdnForm.value.cnameText.split('\n').map(s => s.trim()).filter(s => s);
-  const ip_cidr = currentCdnForm.value.ipText.split('\n').map(s => s.trim()).filter(s => s);
-  
-  const newItem = {
-    name: currentCdnForm.value.name.trim(),
-    cname_domain,
-    ip_cidr
-  };
-  
-  if (isEditingCdn.value && currentEditIndex.value > -1) {
-    cdnList.value.splice(currentEditIndex.value, 1, newItem);
-  } else {
-    cdnList.value.push(newItem);
-  }
-  
-  cdnModalVisible.value = false;
-  message.info('本地修改成功，请记得点击【保存全量更改到服务器】');
-};
-
-// 删除单条 CDN 记录
-const deleteCdnItem = (index) => {
-  cdnList.value.splice(index, 1);
-  message.info('本地删除成功，请记得点击【保存全量更改到服务器】');
-};
-
 // 保存全量数据到服务器
 const saveCdnData = async () => {
   cdnSaveLoading.value = true;
@@ -1327,6 +1914,7 @@ const saveCdnData = async () => {
     });
     if (res.code === 200) {
       message.success('全量保存成功！');
+      originalCdnList.value = JSON.parse(JSON.stringify(cdnList.value));
       fetchCdnList(); // 重新拉取确认
     } else {
       message.error(res.message || '保存失败');
@@ -1415,7 +2003,7 @@ const saveSecurityPolicy = async () => {
 };
 
 // ======================= 性能配置管理逻辑 =======================
-const performanceForm = ref({ celery_heavy_concurrency: 2, celery_light_concurrency: 2 });
+const performanceForm = ref({ celery_heavy_concurrency: 2, celery_light_concurrency: 2, osint_concurrency: 1 });
 const performanceLoading = ref(false);
 const performanceSaveLoading = ref(false);
 
@@ -1426,6 +2014,7 @@ const fetchPerformanceConfig = async () => {
     if (res.code === 200) {
       performanceForm.value.celery_heavy_concurrency = res.data.celery_heavy_concurrency || 2;
       performanceForm.value.celery_light_concurrency = res.data.celery_light_concurrency || 3;
+      performanceForm.value.osint_concurrency = res.data.osint_concurrency || 1;
     } else {
       message.error(res.message || '获取性能配置失败');
     }
@@ -1442,7 +2031,8 @@ const savePerformanceConfig = async () => {
   try {
     const res = await request.post('/api/system_config/performance', {
       celery_heavy_concurrency: performanceForm.value.celery_heavy_concurrency,
-      celery_light_concurrency: performanceForm.value.celery_light_concurrency
+      celery_light_concurrency: performanceForm.value.celery_light_concurrency,
+      osint_concurrency: performanceForm.value.osint_concurrency
     });
     
     if (res.code === 200) {
@@ -1462,8 +2052,8 @@ const savePerformanceConfig = async () => {
 // ======================= 弱口令字典管理逻辑 =======================
 // (Moved bruteLoading and bruteDictList to the top to avoid TDZ)
 
-const fetchBruteDictList = async () => {
-  bruteLoading.value = true;
+const fetchBruteDictList = async (showLoading = true) => {
+  if (showLoading) bruteLoading.value = true;
   try {
     const res = await request.get('/api/brute_dict/list');
     if (res.code === 200) {
@@ -1475,7 +2065,7 @@ const fetchBruteDictList = async () => {
     message.error('请求弱口令字典列表出错');
     console.error(error);
   } finally {
-    bruteLoading.value = false;
+    if (showLoading) bruteLoading.value = false;
   }
 };
 
@@ -1493,7 +2083,7 @@ const terminalRef = ref(null);
 const updateButtonLoading = ref(false);
 const updateHasError = ref(false);
 const updateOfflineNotices = ref('');
-const updatePollInterval = ref(null);
+
 
 const checkVersion = async () => {
   try {
@@ -1699,4 +2289,279 @@ onUnmounted(() => {
 
 <style scoped>
 /* 可以在此处添加自定义样式 */
+
+.cdn-textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 16px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  font-size: 14px;
+  color: #a6e22e;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.cdn-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+.purple-glow:hover {
+  box-shadow: 0 12px 48px rgba(114, 46, 209, 0.25) !important;
+}
+.pulse-btn {
+  animation: btnPulse 2s infinite;
+}
+@keyframes btnPulse {
+  0% { box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(24, 144, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(24, 144, 255, 0); }
+}
+
+/* 字典管理现代化升级样式 */
+.custom-list-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+  color: var(--arl-text-color);
+}
+.custom-list-item:hover {
+  background: var(--arl-bg-light);
+  transform: translateX(4px);
+}
+.custom-list-item.is-active {
+  background: var(--arl-theme-color);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+}
+.custom-list-item.is-active .dict-title,
+.custom-list-item.is-active .dict-subtitle {
+  color: #fff;
+}
+.custom-list-item.is-active .dict-badge {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+}
+.dict-subtitle {
+  font-size: 12px;
+  opacity: 0.65;
+}
+.dict-badge {
+  font-size: 10px;
+  background: rgba(0,0,0,0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--arl-text-color);
+  opacity: 0.6;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 仪表盘（空状态）样式 */
+.health-dashboard-wrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+  overflow: hidden;
+}
+.health-dashboard-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 50% -20%, rgba(24, 144, 255, 0.08), transparent 60%),
+              radial-gradient(circle at -20% 80%, rgba(114, 46, 209, 0.05), transparent 50%);
+  pointer-events: none;
+}
+.health-content {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.health-icon-pulse {
+  animation: float 4s ease-in-out infinite;
+  margin-bottom: 8px;
+}
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+.health-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+.health-stats-container {
+  display: flex;
+  gap: 24px;
+  margin-top: 16px;
+}
+.health-stat-card {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 16px;
+  padding: 24px 40px;
+  min-width: 180px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,1);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.health-stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,1);
+}
+.stat-value {
+  font-size: 36px;
+  font-weight: 800;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  line-height: 1.2;
+}
+.primary-stat .stat-value {
+  background-image: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+}
+.warning-stat .stat-value {
+  background-image: linear-gradient(135deg, #fa8c16 0%, #ffc53d 100%);
+}
+.stat-label {
+  font-size: 14px;
+  color: #64748b;
+  margin-top: 8px;
+  font-weight: 500;
+}
+.health-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 32px;
+  color: #94a3b8;
+  font-size: 13px;
+  background: rgba(255,255,255,0.5);
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.6);
+}
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  background: #52c41a;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(82, 196, 26, 0.7);
+  animation: dotPulse 2s infinite;
+}
+@keyframes dotPulse {
+  0% { box-shadow: 0 0 0 0 rgba(82, 196, 26, 0.7); }
+  70% { box-shadow: 0 0 0 8px rgba(82, 196, 26, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(82, 196, 26, 0); }
+}
+
+/* 代码区还原极简素雅风格 */
+.native-preview-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--arl-bg-white);
+  position: relative;
+  overflow: hidden;
+}
+.native-toolbar {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--arl-border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--arl-bg-white);
+  min-height: 64px;
+}
+.native-preview-area {
+  flex: 1;
+  display: flex;
+  overflow-y: auto;
+  padding: 24px;
+  background: var(--arl-bg-light); /* 非常浅的底色区分 */
+}
+.native-code-wrapper {
+  flex: 1;
+  display: flex;
+  background: var(--arl-bg-white);
+  border: 1px solid var(--arl-border-color);
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+  font-family: 'Fira Code', 'SFMono-Regular', Consolas, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.native-line-numbers {
+  display: flex;
+  flex-direction: column;
+  padding-right: 16px;
+  border-right: 1px solid var(--arl-border-color);
+  margin-right: 16px;
+  color: var(--arl-text-color);
+  opacity: 0.35;
+  text-align: right;
+  user-select: none;
+  min-width: 40px;
+}
+.line-number {
+  height: 21px; /* 与 line-height: 1.6 和 font-size: 13px 对应，大致是 20.8px */
+}
+.native-code-content {
+  flex: 1;
+  min-width: 0;
+}
+.code-text {
+  margin: 0;
+  color: var(--arl-text-color);
+  opacity: 0.85;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: inherit;
+}
+.empty-code {
+  color: var(--arl-text-color);
+  opacity: 0.3;
+  font-style: italic;
+  padding-top: 20px;
+  text-align: center;
+}
+.code-limit-hint {
+  color: var(--arl-theme-color);
+  margin-top: 24px;
+  font-style: italic;
+  border-top: 1px dashed var(--arl-border-color);
+  padding-top: 16px;
+  opacity: 0.7;
+}
+
+@keyframes btn-breathing {
+  0% { box-shadow: 0 0 0 0 rgba(82, 196, 26, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(82, 196, 26, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(82, 196, 26, 0); }
+}
+.breathing-btn {
+  animation: btn-breathing 2s infinite;
+}
 </style>

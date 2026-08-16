@@ -10,11 +10,11 @@
       <a-tab-pane key="web" :tab="`网站备案 - ${queryCounts.web}`"></a-tab-pane>
       <a-tab-pane key="app" :tab="`APP - ${queryCounts.app}`"></a-tab-pane>
       <a-tab-pane key="mapp" :tab="`小程序 - ${queryCounts.mapp}`"></a-tab-pane>
-      <a-tab-pane key="kapp" :tab="`快应用 - ${queryCounts.kapp}`"></a-tab-pane>
-      <a-tab-pane key="invest" :tab="`对外投资 - ${queryCounts.invest}`"></a-tab-pane>
-      <a-tab-pane key="trademark" :tab="`商标信息 - ${queryCounts.trademark}`"></a-tab-pane>
       <a-tab-pane key="wechat" :tab="`公众号 - ${queryCounts.wechat}`"></a-tab-pane>
       <a-tab-pane key="weibo" :tab="`微博 - ${queryCounts.weibo}`"></a-tab-pane>
+      <a-tab-pane key="kapp" :tab="`快应用 - ${queryCounts.kapp}`"></a-tab-pane>
+      <a-tab-pane key="trademark" :tab="`商标信息 - ${queryCounts.trademark}`"></a-tab-pane>
+      <a-tab-pane key="invest" :tab="`对外投资 - ${queryCounts.invest}`"></a-tab-pane>
       <a-tab-pane key="log" tab="运行日志"></a-tab-pane>
     </a-tabs>
 
@@ -23,9 +23,11 @@
       <a-form :model="searchForm" layout="inline" style="row-gap: 16px;">
         <template v-for="col in dynamicColumns" :key="col.key">
           <a-form-item v-if="col.key !== 'raw' && col.key !== 'icon' && col.key !== 'examineDate'" :label="col.title + ':'">
-            <a-input-group compact v-if="['regCapital', 'percent'].includes(col.dataIndex)">
+            <a-input-group compact v-if="['amount', 'percent'].includes(col.dataIndex)">
               <a-select v-model:value="searchFormOp[col.dataIndex]" style="width: 70px" :options="[{value:'eq',label:'='},{value:'gt',label:'>'},{value:'lt',label:'<'}]" />
-              <a-input-number v-model:value="searchForm[col.dataIndex]" style="width: 130px" :placeholder="'输入' + col.title" @pressEnter="onSearch" />
+              <a-input v-model:value="searchForm[col.dataIndex]" style="width: 130px" :placeholder="'输入' + col.title" @pressEnter="onSearch">
+                <template #suffix><search-outlined @click="onSearch" style="color: var(--arl-text-color); opacity: 0.25; cursor: pointer;"/></template>
+              </a-input>
             </a-input-group>
             <a-input v-else v-model:value="searchForm[col.dataIndex]" :placeholder="'请输入' + col.title" style="width: 180px;" allowClear @pressEnter="onSearch">
               <template #suffix><search-outlined @click="onSearch" style="color: var(--arl-text-color); opacity: 0.25; cursor: pointer;"/></template>
@@ -33,6 +35,9 @@
           </a-form-item>
         </template>
       </a-form>
+      <div style="margin-top: 16px;">
+        <a-button @click="resetSearch">清 除</a-button>
+      </div>
     </div>
 
     <a-table
@@ -40,7 +45,8 @@
         :columns="dynamicColumns"
         :loading="loading"
         :pagination="false"
-        :scroll="{ x: 'max-content' }"
+        :scroll="pagination.pageSize >= 100 ? { y: 'calc(100vh - 380px)', x: 'max-content' } : { x: 'max-content' }"
+        :virtual="pagination.pageSize >= 100"
         :rowKey="(record) => record._id || record.id || Math.random()"
         bordered
         style="margin-bottom: 16px;"
@@ -72,7 +78,7 @@
 
       <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 16px;">
         <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(pagination.total / pagination.pageSize) || 1 }} 页 / {{ pagination.total }} 条数据</div>
-        <a-pagination v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" @showSizeChange="handleTableChange" />
+        <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" @showSizeChange="handleTableChange" />
       </div>
     </div>
 
@@ -93,8 +99,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, reactive, onMounted, onUnmounted, nextTick, watch, computed } from 'vue';import { useRoute, useRouter } from 'vue-router';
 import { SearchOutlined } from '@ant-design/icons-vue';
 import request from '../utils/request';
 
@@ -119,13 +124,18 @@ const queryCounts = reactive({
 
 const assetList = ref([]);
 const loading = ref(false);
-const pagination = reactive({ current: 1, pageSize: 10, total: 0 });
+const globalPageSize = useGlobalPageSize(10);
+const pagination = reactive({ current: 1, pageSize: globalPageSize.value, total: 0 });
+
+watch(() => pagination.pageSize, (newSize) => {
+  globalPageSize.value = newSize;
+});
 
 const syslogList = ref([]);
 let syslogTimer = null;
 const terminalContainer = ref(null);
 
-import { computed } from 'vue';
+import { useGlobalPageSize } from '../utils/useGlobalPageSize';
 
 const webColumns = [
   { title: '主办单位名称', dataIndex: 'companyName', key: 'companyName', width: 220 },
@@ -157,7 +167,7 @@ const appColumns = [
 const investColumns = [
   { title: '投资公司名称', dataIndex: 'name', key: 'name', width: 220 },
   { title: '法定代表人', dataIndex: 'legalPersonName', key: 'legalPersonName', width: 120 },
-  { title: '注册资本', dataIndex: 'regCapital', key: 'regCapital', width: 120 },
+  { title: '注册资本', dataIndex: 'amount', key: 'amount', width: 120 },
   { title: '投资比例', dataIndex: 'percent', key: 'percent', width: 100 },
   { title: '详情', key: 'raw', width: 80 }
 ];
@@ -217,10 +227,20 @@ const dynamicColumns = computed(() => {
 });
 
 const searchForm = reactive({});
-const searchFormOp = reactive({});
+const searchFormOp = reactive({ amount: 'eq', percent: 'eq' });
 
 const hasActiveSearch = () => {
   return Object.values(searchForm).some((val) => val !== undefined && val !== null && val !== '');
+};
+
+const resetSearch = () => {
+  for (const key in searchForm) {
+    delete searchForm[key];
+  }
+  searchFormOp.amount = 'eq';
+  searchFormOp.percent = 'eq';
+  pagination.current = 1;
+  fetchAssets(1, pagination.pageSize);
 };
 
 const fetchAssets = async (page = 1, size = 10) => {
@@ -229,7 +249,7 @@ const fetchAssets = async (page = 1, size = 10) => {
     const queryParams = { page, size, task_id: taskId, query_type: activeTab.value };
     for (const [key, val] of Object.entries(searchForm)) {
       if (val !== undefined && val !== null && val !== '') {
-        if (['regCapital', 'percent'].includes(key)) {
+        if (['amount', 'percent'].includes(key)) {
           const op = searchFormOp[key] || 'eq';
           const fieldName = key + '_num';
           if (op === 'gt') queryParams[`${fieldName}__ngt`] = val;
@@ -265,7 +285,7 @@ const handleTableChange = (page, pageSize) => fetchAssets(page, pageSize);
 
 const fetchSyslog = async () => {
   try {
-    const res = await request.get('/syslog/', { params: { task_id: taskId, size: 500, order: 'create_time', _t: Date.now() } });
+    const res = await request.get('/syslog/', { params: { task_id: taskId, size: 50000, order: 'create_time', _t: Date.now() } });
     if (res.code === 200) {
       syslogList.value = res.items || [];
       nextTick(() => {
@@ -295,19 +315,21 @@ const onTabChange = (key) => {
   }
 
   if (key === 'invest') {
-    searchFormOp['regCapital'] = 'eq';
+    searchFormOp['amount'] = 'eq';
     searchFormOp['percent'] = 'eq';
   }
 
   if (key === 'log') {
     fetchSyslog();
     if (!syslogTimer) {
-      syslogTimer = setInterval(fetchSyslog, 5000);
+      if (lastStatus !== 'done' && lastStatus !== 'error') {
+        syslogTimer = setInterval(fetchSyslog, 5000);
+      }
     }
   } else {
     stopSyslogTimer();
     assetList.value = [];
-    fetchAssets(1, 10);
+    fetchAssets(1, globalPageSize.value);
   }
 };
 

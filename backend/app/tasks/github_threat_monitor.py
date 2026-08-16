@@ -2,7 +2,6 @@ import datetime
 import re
 from lxml import etree
 from app import utils
-from app.utils.push import telegram_send, dingding_send
 from app.config import Config
 
 logger = utils.get_logger()

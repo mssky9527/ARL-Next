@@ -1,20 +1,19 @@
-FROM node:18-alpine
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# 仅拷贝包配置并安装依赖，利用 Docker 构建缓存
-COPY package*.json ./
-RUN npm ci --only=production
+# 设置环境变量
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    ARL_HOST="" \
+    ARL_TOKEN=""
 
-# 拷贝源代码
-COPY index.js ./
+# 安装依赖
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
-# 设置权限
-RUN chmod +x index.js
+# 拷贝服务端代码
+COPY server.py ./
 
-# 设置环境变量的默认值（可选）
-ENV ARL_HOST=""
-ENV ARL_TOKEN=""
-
-# 使用 node 直接运行
-ENTRYPOINT ["node", "index.js"]
+# 使用 python 直接运行 MCP Server
+ENTRYPOINT ["python", "server.py"]

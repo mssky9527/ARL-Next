@@ -590,7 +590,7 @@ def file_leak(targets, dicts, gen_dict = True) -> List[Page]:
         map_url[url.scope].add(url)
 
     cnt = 0
-    total = len(map_url)
+    len(map_url)
     ret = []
     for target in map_url:
         cnt += 1

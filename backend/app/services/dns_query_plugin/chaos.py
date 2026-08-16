@@ -19,9 +19,17 @@ class Query(DNSQueryBase):
         }
         results = []
         url = "{}dns/{}/subdomains".format(self.api_url, target)
-        items = utils.http_req(url, 'get', headers=headers).json()
-        for name in items["subdomains"]:
-            subdoamin = name + "." + target
-            results.append(subdoamin)
+        
+        try:
+            response = utils.http_req(url, 'get', headers=headers, timeout=(10.1, 15.1))
+            items = response.json()
+        except Exception as e:
+            self.logger.warning(f"chaos request/json error for {target}: {e}")
+            return []
+
+        if isinstance(items, dict) and items.get("subdomains"):
+            for name in items["subdomains"]:
+                subdoamin = name + "." + target
+                results.append(subdoamin)
 
         return list(set(results))

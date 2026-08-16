@@ -1,5 +1,7 @@
 <template>
   <div style="background-color: var(--arl-bg-layout); padding: 24px; min-height: calc(100vh - 64px);">
+    <div ref="actionBarRef" style="position: sticky; top: 0px; z-index: 10; background-color: var(--arl-bg-layout); margin: -24px -24px 16px -24px; padding: 24px 24px 16px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+
 
     <div style="margin-bottom: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
       <a-button type="primary" @click="openAddModal">添加指纹</a-button>
@@ -14,7 +16,7 @@
       <a-button @click="handleExport" type="primary">一键导出</a-button>
     </div>
 
-    <div class="search-row" style="margin-bottom: 20px; background-color: var(--arl-bg-light); padding: 16px; border-radius: 4px;">
+    <div class="search-row" style="margin-bottom: 16px; ">
       <div class="search-item">
         <span class="label">名称：</span>
         <a-input v-model:value="searchForm.name" placeholder="请输入名称进行搜索" style="width: 220px;" allowClear @pressEnter="onSearch">
@@ -30,7 +32,8 @@
       </div>
     </div>
 
-    <div style="margin-bottom: 16px;">
+    <div style="margin-bottom: 16px; display: flex; gap: 8px;">
+      <a-button @click="resetSearch">清 除</a-button>
       <a-popconfirm
           title="确认删除所选数据吗？"
           ok-text="确认"
@@ -42,7 +45,9 @@
       </a-popconfirm>
     </div>
 
-    <a-table
+    
+    </div>
+<a-table :sticky="stickyConfig"
         :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: onSelectChange }"
         :loading="loading"
         :dataSource="dataSource"
@@ -68,7 +73,7 @@
 
     <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0;">
       <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(pagination.total / pagination.pageSize) || 1 }} 页 / {{ pagination.total }} 条数据</div>
-      <a-pagination v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" />
+      <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" />
     </div>
 
 
@@ -100,15 +105,25 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue';
+
+import { ref as _ref_for_sticky, ref, reactive, onMounted, computed, watch } from 'vue';import { useSticky } from '../utils/useSticky';
+const actionBarRef = _ref_for_sticky(null);
+const { stickyConfig } = useSticky(actionBarRef);
+
 import request from '../utils/request';
 import { message } from 'ant-design-vue';
 import { SearchOutlined, InboxOutlined } from '@ant-design/icons-vue';
+import { useGlobalPageSize } from '../utils/useGlobalPageSize';
 
 const loading = ref(false);
 const dataSource = ref([]);
 const searchForm = reactive({ name: '', rule: '' });
-const pagination = reactive({ current: 1, pageSize: 10, total: 0 });
+const globalPageSize = useGlobalPageSize(10);
+const pagination = reactive({ current: 1, pageSize: globalPageSize.value, total: 0 });
+
+watch(() => pagination.pageSize, (newSize) => {
+  globalPageSize.value = newSize;
+});
 
 // 表格多选逻辑
 const selectedRowKeys = ref([]);
@@ -146,6 +161,12 @@ const fetchData = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const resetSearch = () => {
+  Object.assign(searchForm, { name: '', rule: '' });
+  pagination.current = 1;
+  onSearch();
 };
 
 const onSearch = () => { pagination.current = 1; fetchData(); };

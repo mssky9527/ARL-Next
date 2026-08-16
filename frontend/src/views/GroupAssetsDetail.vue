@@ -1,9 +1,17 @@
 <template>
   <div style="background-color: var(--arl-bg-layout); padding: 24px; min-height: calc(100vh - 64px);">
+    <div ref="actionBarRef" style="position: sticky; top: 0px; z-index: 10; background-color: var(--arl-bg-layout); margin: -24px -24px 16px -24px; padding: 24px 24px 16px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
 
-    <h2 style="font-size: 20px; font-weight: 500; margin-bottom: 24px;">{{ targetName }}相关资产</h2>
+    <a-page-header
+      @back="() => $router.push('/group')"
+      style="padding: 0 0 24px 0;"
+    >
+      <template #title>
+        <span>{{ targetName }}相关资产</span>
+      </template>
+    </a-page-header>
 
-        <a-tabs v-model:activeKey="activeTab" type="card" class="arl-detail-tabs">
+        <a-tabs v-model:activeKey="activeTab" type="card" class="arl-detail-tabs" style="margin-bottom: 16px;">
       <a-tab-pane key="site" tab="站点"></a-tab-pane>
       <a-tab-pane key="domain" tab="子域名"></a-tab-pane>
       <a-tab-pane key="ip" tab="IP"></a-tab-pane>
@@ -19,11 +27,10 @@
       <a-tab-pane key="wih" tab="WIH"></a-tab-pane>
     </a-tabs>
 
-    <div v-if="tabConfig[activeTab]?.searchFields" class="search-row" style="margin-bottom: 16px;">
-      <div v-for="field in tabConfig[activeTab].searchFields" :key="field.key" class="search-item">
-        <span class="label">{{ field.label }}：</span>
-
-        <a-select
+    <div v-if="tabConfig[activeTab]?.searchFields" style="margin-bottom: 16px;">
+      <a-form :model="searchForm" layout="inline" style="row-gap: 16px;">
+      <a-form-item v-for="field in tabConfig[activeTab].searchFields" :key="field.key" :label="field.label + '：'">
+                <a-select
             v-if="field.type === 'select'"
             v-model:value="searchForm[field.key]"
             :placeholder="`请选择${field.label}进行搜索`"
@@ -95,31 +102,27 @@
         >
           <template #suffix><search-outlined @click="onSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
         </a-input>
-      </div>
-
-      <div class="search-item" style="gap: 8px; margin-left: 4px;">
-        <a-button @click="resetSearch">清 除</a-button>
-
-        <a-button v-if="activeTab !== 'ip' && tabConfig[activeTab]?.exportUrl" type="primary" @click="handleExport">导出{{ tabConfig[activeTab].tabName }}</a-button>
-
-        <template v-if="activeTab === 'ip'">
-          <a-button type="primary" @click="handleIPExport('port')">导出 IP 端口</a-button>
-          <a-button type="primary" @click="handleIPExport('domain')">导出域名</a-button>
-          <a-button type="primary" @click="handleIPExport('ip')">导出IP</a-button>
-        </template>
-
-        <a-button v-if="activeTab === 'site'" type="primary" @click="openRiskModal">风险任务下发</a-button>
-      </div>
-
+      </a-form-item>
+      </a-form>
     </div>
 
     <div style="margin-bottom: 16px; display: flex; gap: 8px;">
+      <a-button @click="resetSearch">清 除</a-button>
       <a-button :disabled="!hasSelected" @click="handleBatchDelete">批量删除</a-button>
       <a-button v-if="activeTab === 'site'" type="primary" @click="openAddSiteModal">添加站点</a-button>
       <a-button v-if="activeTab === 'domain'" type="primary" @click="openAddDomainModal">添加子域名</a-button>
+
+      <a-button v-if="activeTab !== 'ip' && tabConfig[activeTab]?.exportUrl" type="primary" @click="handleExport">导出{{ tabConfig[activeTab].tabName }}</a-button>
+      <template v-if="activeTab === 'ip'">
+        <a-button type="primary" @click="handleIPExport('port')">导出 IP 端口</a-button>
+        <a-button type="primary" @click="handleIPExport('domain')">导出域名</a-button>
+        <a-button type="primary" @click="handleIPExport('ip')">导出IP</a-button>
+      </template>
+      <a-button v-if="activeTab === 'site'" type="primary" @click="openRiskModal">风险任务下发</a-button>
+    </div>
     </div>
 
-    <a-table :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: onSelectChange }" :loading="loading" :dataSource="dataSource" :columns="columns" :pagination="false" :scroll="{ x: 'max-content' }" size="middle" :rowKey="(record) => record._id || record.id">
+    <a-table :sticky="stickyConfig" :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: onSelectChange }" :loading="loading" :dataSource="dataSource" :columns="columns" :pagination="false" :scroll="{ x: 'max-content' }" size="middle" :rowKey="(record) => record._id || record.id">
       <template #bodyCell="{ column, record, index }">
 
         <template v-if="column.key === 'index'">
@@ -280,7 +283,10 @@
           <a style="cursor: pointer;" @click="openFingerModal(record.name)">{{ record.name || '-' }}</a>
         </template>
         <template v-else-if="column.key === 'host'">
-          <span>{{ record.ip }}:{{ record.port }}</span>
+          <span>{{ record.ip || record.host }}{{ record.port ? ':' + record.port : '' }}</span>
+        </template>
+        <template v-else-if="column.key === 'update_date'">
+          <span>{{ record.update_date || record.insert_time || '-' }}</span>
         </template>
 
       </template>
@@ -336,7 +342,7 @@
 
     <div v-if="tabConfig[activeTab]" style="display: flex; justify-content: space-between; align-items: center; padding: 0 16px; margin-top: 16px;">
       <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(pagination.total / pagination.pageSize) || 1 }} 页 / {{ pagination.total }} 条数据</div>
-      <a-pagination v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" />
+      <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" />
     </div>
 
     <a-modal v-model:open="addSiteVisible" title="添加站点" @ok="submitAddSite" :confirmLoading="addSiteLoading" width="520px" okText="确 定" cancelText="取 消" destroyOnClose>
@@ -391,13 +397,18 @@
 </template>
 
 <script setup>
-import { ref, onMounted, reactive, watch, computed, createVNode, onUnmounted, nextTick } from 'vue';
+
+import { ref as _ref_for_sticky, ref, onMounted, reactive, watch, computed, createVNode, onUnmounted, nextTick } from 'vue';import { useSticky } from '../utils/useSticky';
+const actionBarRef = _ref_for_sticky(null);
+const { stickyConfig } = useSticky(actionBarRef);
+
 import { useRoute } from 'vue-router';
 import request from '../utils/request';
 import { message, Modal } from 'ant-design-vue';
 import * as echarts from 'echarts';
 import CidrDetailModal from '../components/CidrDetailModal.vue';
-import { SearchOutlined , ExclamationCircleOutlined} from '@ant-design/icons-vue';
+import { SearchOutlined , ExclamationCircleOutlined, LeftOutlined } from '@ant-design/icons-vue';
+import { useGlobalPageSize } from '../utils/useGlobalPageSize';
 
 const route = useRoute();
 // 🚨 修复 1：使用 computed，让路由参数具备真正的响应式
@@ -412,7 +423,12 @@ const previewVisible = ref(false);
 const previewImage = ref('');
 const handlePreview = (url) => { previewImage.value = url; previewVisible.value = true; };
 const searchForm = ref({});
-const pagination = reactive({ current: 1, pageSize: 10, total: 0 });
+const globalPageSize = useGlobalPageSize(10);
+const pagination = reactive({ current: 1, pageSize: globalPageSize.value, total: 0 });
+
+watch(() => pagination.pageSize, (newSize) => {
+  globalPageSize.value = newSize;
+});
 
 const selectedRowKeys = ref([]);
 const hasSelected = computed(() => selectedRowKeys.value.length > 0);
@@ -615,12 +631,14 @@ const tabConfig = {
       { label: '签发者名称', key: 'cert.issuer_dn', operator: '=' },
       { label: '主题名称', key: 'cert.subject_dn', operator: '=' },
       { label: 'SHA-1', key: 'cert.fingerprint.sha1', operator: '=' },
-      { label: '使用者备用名称', key: 'cert.extensions.subjectAltName', operator: '=' }
+      { label: '使用者备用名称', key: 'cert.extensions.subjectAltName', operator: '=' },
+      { label: '更新时间', key: 'update_date', type: 'dateRange' }
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
       { title: 'HOST', key: 'host', width: 180 },
-      { title: 'CERT', key: 'cert_detail', width: 900 }
+      { title: 'CERT', key: 'cert_detail', width: 900 },
+      { title: '更新时间', key: 'update_date', width: 180 }
     ]
   },
   service: {
@@ -630,13 +648,15 @@ const tabConfig = {
       { label: '服务', key: 'service_name', operator: '=' },
       { label: 'IP', key: 'service_info.ip', operator: '=' },
       { label: '端口', key: 'service_info.port_id', operator: '=' },
-      { label: '产品', key: 'service_info.product', operator: '=' }
+      { label: '产品', key: 'service_info.product', operator: '=' },
+      { label: '更新时间', key: 'update_date', type: 'dateRange' }
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
       { title: '服务', dataIndex: 'service_name', key: 'service_name', width: 150, align: 'center' },
       { title: 'IP端口', key: 'ip_port', width: 300 },
-      { title: 'Product', key: 'product', width: 250 }
+      { title: 'Product', key: 'product', width: 250 },
+      { title: '更新时间', key: 'update_date', width: 180 }
     ]
   },
   fileleak: {
@@ -646,14 +666,16 @@ const tabConfig = {
       { label: 'URL', key: 'url', operator: '=' },
       { label: '标题', key: 'title', operator: '=' },
       { label: '状态码', key: 'status_code', operator: '=' },
-      { label: 'body 长度', key: 'content_length', operator: '=' }
+      { label: 'body 长度', key: 'content_length', operator: '=' },
+      { label: '更新时间', key: 'update_date', type: 'dateRange' }
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
       { title: 'URL', key: 'fileleak_url', width: 500 },
       { title: '标题', dataIndex: 'title', key: 'title', width: 250 },
       { title: '状态码', dataIndex: 'status_code', key: 'status_code', width: 100, align: 'center' },
-      { title: 'body 长度', dataIndex: 'content_length', key: 'content_length', width: 120, align: 'center' }
+      { title: 'body 长度', dataIndex: 'content_length', key: 'content_length', width: 120, align: 'center' },
+      { title: '更新时间', key: 'update_date', width: 180 }
     ]
   },
   url: {
@@ -665,7 +687,8 @@ const tabConfig = {
       { label: '标题', key: 'title', operator: '=' },
       { label: '状态码', key: 'status_code', operator: '=' },
       { label: 'body 长度', key: 'content_length', operator: '=' },
-      { label: '来源', key: 'source', operator: '=' }
+      { label: '来源', key: 'source', operator: '=' },
+      { label: '更新时间', key: 'update_date', type: 'dateRange' }
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
@@ -673,7 +696,8 @@ const tabConfig = {
       { title: '标题', dataIndex: 'title', key: 'title', width: 200 },
       { title: '状态码', dataIndex: 'status_code', key: 'status_code', width: 100, align: 'center' },
       { title: 'body 长度', dataIndex: 'content_length', key: 'content_length', width: 120, align: 'center' },
-      { title: '来源', dataIndex: 'source', key: 'source', width: 150 }
+      { title: '来源', dataIndex: 'source', key: 'source', width: 150 },
+      { title: '更新时间', key: 'update_date', width: 180 }
     ]
   },
   vuln: {
@@ -699,14 +723,14 @@ const tabConfig = {
     url: '/asset_npoc_service/',
     tabName: '服务(python)',
     searchFields: [
-      { label: '协议', key: 'protocol', operator: '=' },
+      { label: '协议', key: 'scheme', operator: '=' },
       { label: '主机', key: 'host', operator: '=' },
       { label: '端口', key: 'port', operator: '=' },
       { label: '目标', key: 'target', operator: '=' }
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
-      { title: '协议', dataIndex: 'protocol', key: 'protocol', width: 150 },
+      { title: '协议', dataIndex: 'scheme', key: 'scheme', width: 150 },
       { title: '主机', dataIndex: 'host', key: 'host', width: 200 },
       { title: '端口', dataIndex: 'port', key: 'port', width: 100, align: 'center' },
       { title: '目标', dataIndex: 'target', key: 'target', width: 250 },
@@ -718,13 +742,15 @@ const tabConfig = {
     exportUrl: '/asset_cip/export/',
     tabName: 'C段',
     searchFields: [
-      { label: 'C段', key: 'cidr_ip', operator: '=' }
+      { label: 'C段', key: 'cidr_ip', operator: '=' },
+      { label: '更新时间', key: 'update_date', type: 'dateRange' }
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
       { title: 'C段', dataIndex: 'cidr_ip', key: 'cidr_ip', width: 300 },
       { title: 'IP数', key: 'ip_count_col', width: 150, align: 'center' },
-      { title: '域名数', key: 'domain_count_col', width: 150, align: 'center' }
+      { title: '域名数', key: 'domain_count_col', width: 150, align: 'center' },
+      { title: '更新时间', key: 'update_date', width: 180 }
     ]
   },
   nuclei_result: {
@@ -757,12 +783,14 @@ const tabConfig = {
         operator: '模糊匹配',
         hasOperatorSelect: true,
         operators: ['模糊匹配', '精确匹配']
-      }
+      },
+      { label: '更新时间', key: 'update_date', type: 'dateRange' }
     ],
     cols: [
       { title: '序号', key: 'index', width: 80, align: 'center' },
       { title: 'finger', key: 'finger_name', width: 500 },
-      { title: '数量', dataIndex: 'cnt', key: 'cnt', width: 200 }
+      { title: '数量', dataIndex: 'cnt', key: 'cnt', width: 200 },
+      { title: '更新时间', key: 'update_date', width: 180 }
     ]
   }
 };
@@ -1204,9 +1232,6 @@ const submitAddDomain = async () => {
 
 <style scoped>
 /* 🚨 将原本的 gap: 16px 24px 改为更紧凑的 16px 12px */
-.search-row { display: flex; flex-wrap: wrap; gap: 16px 12px; align-items: center; }
-.search-item { display: flex; align-items: center; }
-.search-item .label { color: var(--arl-text-color); margin-right: 8px; min-width: 60px; text-align: right; white-space: nowrap; }
 .scroll-x { width: 100%; max-width: 400px; overflow-x: auto; }
 .scroll-x pre { margin: 0; font-family: Consolas, monospace; font-size: 12px; color: var(--arl-text-color); opacity: 0.65; }
 :deep(.ant-tabs-card-bar .ant-tabs-tab) { border-radius: 2px 2px 0 0 !important; margin-right: 4px !important; border: 1px solid var(--arl-border-color) !important; background: var(--arl-bg-light) !important; }

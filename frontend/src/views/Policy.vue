@@ -1,10 +1,12 @@
 <template>
   <div style="background-color: var(--arl-bg-layout); padding: 24px; min-height: calc(100vh - 64px);">
+    <div ref="actionBarRef" style="position: sticky; top: 0px; z-index: 10; background-color: var(--arl-bg-layout); margin: -24px -24px 16px -24px; padding: 24px 24px 16px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+
     <div style="margin-bottom: 16px;">
       <a-button type="primary" @click="goToDetail">新建策略</a-button>
     </div>
 
-    <div class="search-row" style="margin-bottom: 20px; background-color: var(--arl-bg-light); padding: 16px; border-radius: 4px;">
+    <div class="search-row" style="margin-bottom: 16px; ">
       <div class="search-item">
         <span class="label">策略名称：</span>
         <a-input v-model:value="searchForm.name" placeholder="请输入策略名称进行搜索" style="width: 220px;" allowClear @pressEnter="onSearch">
@@ -13,7 +15,8 @@
       </div>
     </div>
 
-    <div style="margin-bottom: 16px;">
+    <div style="margin-bottom: 16px; display: flex; gap: 8px;">
+      <a-button @click="resetSearch">清 除</a-button>
       <a-popconfirm
           title="确认批量删除选中的数据吗？"
           ok-text="确认"
@@ -25,7 +28,9 @@
       </a-popconfirm>
     </div>
 
-    <a-table :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: keys => selectedRowKeys = keys }" :loading="loading" :dataSource="dataSource" :columns="columns" :pagination="false" size="middle" :rowKey="(record) => record._id">
+    
+    </div>
+<a-table :sticky="stickyConfig" :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: keys => selectedRowKeys = keys }" :loading="loading" :dataSource="dataSource" :columns="columns" :pagination="false" size="middle" :rowKey="(record) => record._id">
       <template #bodyCell="{ column, record, index }">
         <template v-if="column.key === 'index'"><span>{{ (pagination.current - 1) * pagination.pageSize + index + 1 }}</span></template>
 
@@ -49,13 +54,15 @@
         <div class="policy-expanded-box">
           <div class="policy-section">
             <div class="policy-title">域名和IP配置</div>
-            <div class="policy-row"><span class="policy-label">域名爆破类型</span><span class="policy-val">{{ getDictName(record.policy?.domain_config?.domain_brute_type) }}</span></div>
+            <div class="policy-row"><span class="policy-label">域名爆破字典</span><span class="policy-val">{{ getDictName(record.policy?.domain_config?.domain_brute_type) }}</span></div>
+            <div class="policy-row"><span class="policy-label">智能子域爆破字典</span><span class="policy-val">{{ record.policy?.domain_config?.alt_dns_dict || 'altdnsdict.txt' }}</span></div>
             <div class="policy-row"><span class="policy-label">端口扫描类型</span><span class="policy-val">{{ getDictName(record.policy?.ip_config?.port_scan_type) }}</span></div>
             <div class="policy-row"><span class="policy-label">配置信息</span><span class="policy-val">{{ getDomainIpConfigText(record.policy) }}</span></div>
           </div>
           <div class="policy-divider"></div>
           <div class="policy-section">
             <div class="policy-title">站点和风险配置</div>
+            <div class="policy-row"><span class="policy-label">目录文件泄露字典</span><span class="policy-val">{{ record.policy?.file_leak_dict || 'file_top_2000.txt' }}</span></div>
             <div class="policy-row"><span class="policy-label">配置信息</span><span class="policy-val">{{ getSiteRiskConfigText(record.policy) }}</span></div>
           </div>
           <div class="policy-divider"></div>
@@ -74,7 +81,7 @@
 
     <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0;">
       <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(pagination.total / pagination.pageSize) || 1 }} 页 / {{ pagination.total }} 条数据</div>
-      <a-pagination v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" />
+      <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" />
     </div>
   </div>
 
@@ -109,17 +116,27 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+
+import { ref as _ref_for_sticky, ref, reactive, onMounted, watch } from 'vue';import { useSticky } from '../utils/useSticky';
+const actionBarRef = _ref_for_sticky(null);
+const { stickyConfig } = useSticky(actionBarRef);
+
 import { useRouter } from 'vue-router'; // 引入路由
 import request from '../utils/request';
 import { message } from 'ant-design-vue';
 import { SearchOutlined } from '@ant-design/icons-vue';
+import { useGlobalPageSize } from '../utils/useGlobalPageSize';
 
 const router = useRouter(); // 实例化路由
 const loading = ref(false);
 const dataSource = ref([]);
 const searchForm = ref({});
-const pagination = reactive({ current: 1, pageSize: 10, total: 0 });
+const globalPageSize = useGlobalPageSize(10);
+const pagination = reactive({ current: 1, pageSize: globalPageSize.value, total: 0 });
+
+watch(() => pagination.pageSize, (newSize) => {
+  globalPageSize.value = newSize;
+});
 const selectedRowKeys = ref([]);
 
 const columns = [
@@ -141,6 +158,12 @@ const fetchData = async () => {
       pagination.total = res.total || 0;
     }
   } catch (error) { message.error('加载策略数据失败'); } finally { loading.value = false; }
+};
+
+const resetSearch = () => {
+  searchForm.value = {};
+  pagination.current = 1;
+  onSearch();
 };
 
 const onSearch = () => { pagination.current = 1; fetchData(); };
@@ -169,7 +192,7 @@ const getDomainIpConfigText = (p) => {
 };
 const getSiteRiskConfigText = (p) => {
   if (!p) return '-'; const l = [];
-  if (p.site_config?.site_identify) l.push('站点识别');
+  if (p.site_config?.site_identify) l.push('站点与指纹识别');
   if (p.site_config?.search_engines) l.push('搜索引擎调用');
   if (p.site_config?.site_spider) l.push('站点爬虫');
   if (p.file_leak) l.push('文件泄露');

@@ -1,10 +1,10 @@
-from flask_restx import Resource, Api, reqparse, fields, Namespace
+from flask_restx import fields, Namespace
 from app.utils import get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser
 from app.modules import ErrorMsg
 from app import utils
 from bson import ObjectId
-from flask_restx.fields import Nested, String, Boolean, List
+from flask_restx.fields import Nested
 from flask_restx.model import Model
 
 ns = Namespace('policy', description="策略信息")
@@ -40,6 +40,7 @@ domain_config_fields = ns.model('domainConfig', {
     "domain_brute": fields.Boolean(description="域名爆破", default=True),
     "domain_brute_type": fields.String(description="域名爆破类型(big)", example="big"),
     "alt_dns": fields.Boolean(description="DNS字典智能生成", default=True),
+    "alt_dns_dict": fields.String(description="智能子域爆破字典选择", default="altdnsdict.txt"),
     "arl_search": fields.Boolean(description="ARL 历史查询", default=True),
     "dns_query_plugin": fields.Boolean(description="域名插件查询", default=False)
 })
@@ -84,6 +85,7 @@ add_policy_fields = ns.model('addPolicy', {
         "ip_config": fields.Nested(ip_config_fields),
         "site_config": fields.Nested(site_config_fields),
         "file_leak": fields.Boolean(description="文件泄漏", default=False),
+        "file_leak_dict": fields.String(description="文件泄露字典选择", default="file_top_2000.txt"),
         "npoc_service_detection": fields.Boolean(description="服务识别（纯python实现）", default=False),
         "poc_config": fields.List(fields.Nested(ns.model('pocConfig', {
             "plugin_name": fields.String(description="poc 插件名称ID", default=False),
@@ -152,6 +154,7 @@ class AddARLPolicy(ARLResource):
             return utils.build_ret(brute_config, {})
 
         file_leak = fields.boolean(policy.pop("file_leak", False))
+        file_leak_dict = str(policy.pop("file_leak_dict", "file_top_2000.txt"))
         npoc_service_detection = fields.boolean(policy.pop("npoc_service_detection", False))
         desc = args.pop("desc", "")
 
@@ -168,6 +171,7 @@ class AddARLPolicy(ARLResource):
                 "poc_config": poc_config,
                 "brute_config": brute_config,
                 "file_leak": file_leak,
+                "file_leak_dict": file_leak_dict,
                 "npoc_service_detection": npoc_service_detection,
                 "scope_config": scope_config
             },

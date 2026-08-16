@@ -5,18 +5,29 @@
 
   *Next-Generation AI-Native Asset Reconnaissance & Vulnerability Monitoring Platform*
 
+  <p><b>告别任务假死与内存泄漏 · 拥抱 AI Agent 自动化调度 · 极速 2 分钟一键开箱即用</b></p>
+
   <p>
     <a href="https://github.com/owl234/ARL-Next/releases"><img src="https://img.shields.io/github/v/release/owl234/ARL-Next?style=flat-square&color=blue" alt="Release"></a>
-    <a href="https://github.com/owl234/ARL-Next/stargazers"><img src="https://img.shields.io/github/stars/owl234/ARL-Next?style=flat-square" alt="Stars"></a>
+    <a href="https://github.com/owl234/ARL-Next/stargazers"><img src="https://img.shields.io/github/stars/owl234/ARL-Next?style=flat-square&color=gold" alt="Stars"></a>
+    <a href="https://github.com/owl234/ARL-Next/network/members"><img src="https://img.shields.io/github/forks/owl234/ARL-Next?style=flat-square" alt="Forks"></a>
     <a href="https://github.com/owl234/ARL-Next/blob/main/LICENSE"><img src="https://img.shields.io/github/license/owl234/ARL-Next?style=flat-square" alt="License"></a>
   </p>
 
   <p>
-    <a href="https://hub.docker.com/"><img src="https://img.shields.io/badge/docker-ready-blue.svg?style=flat-square&logo=docker" alt="Docker"></a>
-    <img src="https://img.shields.io/badge/python-3.13%2B-blue?style=flat-square&logo=python" alt="Python">
-    <img src="https://img.shields.io/badge/node.js-18%2B-green?style=flat-square&logo=node.js" alt="Node.js">
-    <img src="https://img.shields.io/badge/vue-3.x-4fc08d?style=flat-square&logo=vuedotjs" alt="Vue">
-    <img src="https://img.shields.io/badge/MCP-Ready-purple?style=flat-square" alt="MCP">
+    <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
+    <img src="https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
+    <img src="https://img.shields.io/badge/MongoDB-7.0-47A248?style=flat-square&logo=mongodb&logoColor=white" alt="MongoDB">
+    <img src="https://img.shields.io/badge/Vue-3.x-4FC08D?style=flat-square&logo=vuedotjs&logoColor=white" alt="Vue">
+    <img src="https://img.shields.io/badge/MCP-Native-purple?style=flat-square" alt="MCP">
+  </p>
+
+  <p>
+    <a href="#quick-deploy"><b>⚡ 2分钟极速安装</b></a> •
+    <a href="#comparison"><b>💡 原版痛点对比</b></a> •
+    <a href="#core-features"><b>✨ 核心特性</b></a> •
+    <a href="./mcp-server/README.md"><b>🤖 MCP配置指南</b></a> •
+    <a href="#changelog"><b>📜 更新日志</b></a>
   </p>
 </div>
 
@@ -26,54 +37,76 @@
 
 ## 💡 什么是 ARL-Next？
 
-> **ARL-Next** 是 ARL (资产侦察灯塔) 的现代化重构版本。现已进化为 **AI 原生、高性能、全维度闭环的安全监控平台**。
+> **ARL-Next** 是经典开源资产侦察灯塔 (ARL) 的现代化涅槃重构版本。
+> 针对原版长期停更导致的**任务假死、内存泄露、安装报错、依赖过时**等致命缺陷进行了彻底的底层重构，并深度融入 **AI Agent (MCP) 原生调度**能力，进化为高性能、全维度闭环的下一代安全监控平台。
 
-### ✨ 核心特性
+---
 
-* **🤖 AI 原生**：内置 MCP 接口，允许 AI Agent 直接对话接管系统。（👉 [MCP 配置指南](./mcp-server/README.md)）
-* **🚀 极速架构**：升级 Chromium 与 Nuclei。耗时任务全面剥离为微服务，根除高并发假死。
-* **🌐 资产闭环**：集成 ICP 与天眼查，全自动挖掘企业多维资产。
-* **🛡️ 威胁情报**：内置 GitHub 监控雷达，实时追踪最新 CVE 与代码泄露。
-* **⚡ 极简运维**：提供 2 分钟极速部署包，支持 Web 端平滑热更新与 Basic Auth 前置防御。
-* **🇨🇳 国内特化**：针对国内网络深度优化，直连阿里云预构建镜像，彻底根绝 GFW 阻断与依赖下载失败问题。
+### <span id="comparison"></span>🥊 为什么选择 ARL-Next？(痛点对比)
 
-<details>
-<summary><b>🤔 对比原版 ARL 解决了哪些痛点？</b></summary>
+| 核心痛点维度 | 🏚️ 原版 ARL (社区遗留版) | 🚀 ARL-Next (本项目) |
+| :--- | :--- | :--- |
+| **系统稳定性** | 扫描海量目标时 Celery 阻塞假死、任务丢失 | **微服务解耦** (截图/OSINT独立)，批量入库彻底根除假死 |
+| **AI 原生集成** | 无 AI 接口，仅限人工手动点击 | **原生 MCP 支持**，AI Agent 一句话接管资产挖掘与分析 |
+| **企业资产穿透** | 无企业资产查询功能 | **天眼查股权穿透 + ICP 深度下钻**，一键秒级打通集团与子公司全量资产 (护网友好) |
+| **部署与构建** | 依赖过时容易报错，需拉取海量外网包 | **阿里云国内预构建镜像**，多阶段构建，2分钟一键秒启动 |
+| **现代化技术栈** | Python 3.6 / Vue2 / MongoDB 3.x 严重脱节 | **Python 3.13 / Vue3 / MongoDB 7.0** 现代底层全线跨代 |
+| **交互与体验** | 页面滚动遮挡表头、分页重置、管理繁琐 | **操作栏/表头悬浮吸附 (Sticky)**、分页持久化、现代化三栏字典 |
+| **情报与监控** | 缺少主动情报源、时区错乱导致重复告警 | **GitHub CVE & 泄露雷达**、原子级去重锁、精准时区对齐 |
 
-1. **解决任务假死**：高耗能截图与 OSINT 独立成微服务集群，主节点不再阻塞。
-2. **告别编译与臃肿**：引入 `uv` 极速包管理与 Docker 多阶段构建，彻底剥离底层 C 编译链，镜像体积锐减且杜绝了依赖报错。
-3. **重构技术底座**：前端升级 Vue3，后端重写高并发数据库索引，清剿数十项深层 Bug。
-4. **增强反爬伪装**：升级特征隐藏机制，大幅降低被 WAF 封禁的概率。
-</details>
+---
+
+### <span id="core-features"></span>✨ 核心特性矩阵
+
+* 🤖 **AI 原生赋能**：内置标准化 MCP 服务，直接接入 Claude / Cursor / Open-WebUI，实现用自然语言下发扫描与导出 13 维资产全景大盘。（👉 [MCP 配置指南](./mcp-server/README.md)）
+* 🚀 **高并发极速引擎**：耗时截图与 OSINT 全面剥离为独立微服务；核心落库升级为 `bulk_write` 批量入库，轻松吞吐数十万级资产。
+* 🌐 **全维度企业资产闭环**：深度打通企业 ICP 备案与天眼查股权穿透，自动化构建从“集团公司 ➔ 控股子公司 ➔ 域名 ➔ IP ➔ 端口 ➔ Web/组件 ➔ 漏洞”的完整链条。
+* 🛡️ **威胁情报与代码雷达**：内置 GitHub CVE 与代码泄露监控引擎，毫秒级原子锁防重复告警，实时感知外部威胁。
+* ⚡ **极简运维与自愈机制**：提供开箱即用的 2 分钟极速部署包，内置容器健康巡检与自愈机制，支持 Web 后台平滑热更新与 Basic Auth 前置防御。
+* 🇨🇳 **国内网络深度优化**：全线镜像预构建并托管于阿里云国内私库，彻底告别海外网络阻断与 Pip/Docker 依赖拉取失败。
 
 ---
 
 ## 📸 界面预览
 
-* **全局仪表盘**：实时展示系统资源消耗、后台任务状态、多维风险统计及最新日志流。
+* **全局仪表盘 (Dashboard)**：实时监测系统资源水位、扫描任务生命周期、多维风险态势大盘与全景操作日志流。
   
-  <img src="./img/dashboard1.png" alt="仪表盘" width="800">
+  <p align="center">
+    <img src="./img/dashboard.png" alt="ARL-Next 全局仪表盘" width="850">
+  </p>
 
-<details>
-<summary><b>🖼️ 点击展开查看更多核心界面</b></summary>
+<details open>
+<summary><b>🖼️ 点击收起 / 展开更多核心业务界面</b></summary>
 
-* **OSINT 资产侦察**：支持 ICP 与天眼查等情报关联检索，一键同步企业多维资产并无缝下发任务。
-  
-  <img src="./img/enterprise-asset-search1.png" alt="资产侦察" width="800">
+<br/>
 
-* **任务与指纹管理**：支持任务全生命周期追踪、自定义 PoC 组合及全局指纹检索。
+* **企业级 OSINT 资产侦察**：支持企业 ICP 备案穿透与天眼查股权穿透，一键关联并同步下发多维探测任务。
   
-  <img src="./img/task-new1.png" alt="任务新建" width="800">
-  
-  <img src="./img/task-management.png" alt="任务管理" width="800">
+  <p align="center">
+    <img src="./img/enterprise-asset-search.png" alt="企业资产侦察" width="800">
+  </p>
 
-* **威胁情报雷达**：支持最新 CVE 漏洞追踪与 **GitHub** 代码泄露实时监控。
+* **任务下发与策略调度**：深度联动 Nuclei、PoC 插件池及 100+ Web 指纹库，支持全生命周期下发与追踪。
   
-  <img src="./img/threat-intel-radar1.png" alt="威胁情报雷达" width="800">
+  <p align="center">
+    <img src="./img/task-new.png" alt="任务新建与策略选择" width="800">
+  </p>
+  
+  <p align="center">
+    <img src="./img/task-management1.png" alt="任务全生命周期管理" width="800">
+  </p>
 
-* **系统设置**：集成 API 热配置、字典云管理、队列并发热扩缩容及告警通道测试。
+* **威胁情报与代码泄露雷达**：实时追踪全球最新 CVE 漏洞，自动化监听 GitHub 敏感代码与凭证泄露。
   
-  <img src="./img/system-settings1.png" alt="系统设置" width="800">
+  <p align="center">
+    <img src="./img/threat-intel-radar.png" alt="威胁情报雷达" width="800">
+  </p>
+
+* **系统设置与现代字典管理**：全新现代三栏式字典管理（支持在线预览/呼吸灯提示）、队列并发热扩缩容及告警通道。
+  
+  <p align="center">
+    <img src="./img/system-settings.png" alt="系统设置与字典管理" width="800">
+  </p>
 
 </details>
 
@@ -81,73 +114,92 @@
 
 ## 🏗️ 架构设计
 
-ARL-Next 采用前后端解耦的微服务架构。下面是系统的完整数据流与模块调度图：
+ARL-Next 采用前后端解耦、异步分布式任务队列与轻量微服务集群架构。整体数据流与模块交互如下：
 
 ```mermaid
 graph TD
-    User["👨‍💻 安全分析师"] -->|HTTPS + Basic Auth| Nginx["🖥️ Frontend (Nginx / Vue3)"]
-    Agent["🤖 AI 大模型"] -.->|MCP 协议| MCP["🤖 MCP Server (AI扩展)"]
+    %% 1. 接入层
+    User["👨‍💻 安全分析师 (浏览器)"] -->|"HTTPS / Basic Auth (5173)"| Nginx["🖥️ Frontend (Nginx + Vue 3)"]
+    Agent["🤖 AI Agent (Claude / Cursor)"] -.->|"MCP 协议 (Stdio)"| MCP["🤖 MCP Server (Python 原生)"]
+
+    %% 2. API 网关层
+    Nginx -->|"REST API 反代 (5000)"| Backend["⚙️ Backend API (Gunicorn / Python 3.13)"]
+    MCP -->|"API Token 鉴权调用"| Backend
+
+    %% 3. 调度与任务分流 (双轨解耦)
+    Backend -->|"1. 异步直调 (16181)"| OSINT["🧩 OSINT 微服务 (天眼查/ICP 协程池)"]
+    Backend -->|"2. 生产扫描任务"| MQ(("⚡ RabbitMQ 3 (轻重/GitHub 多队列)"))
+
+    %% 4. Celery Worker 扫描计算集群
+    subgraph WorkerCluster ["⚙️ Celery Worker 扫描与调度集群"]
+        MQ -->|"轻量队列 arltask_light"| W_Light["⚡ 轻任务 Worker (DNS/端口/指纹)"]
+        MQ -->|"重载队列 arltask_heavy"| W_Heavy["🔥 重任务 Worker (Nuclei/PoC/爬虫)"]
+        MQ -->|"威胁队列 arlgithub"| W_Git["🛡️ 威胁情报 Worker (CVE/代码泄露)"]
+        
+        Scheduler["⏰ 监控调度引擎 (Scheduler & Beat)"] -.->|"周期触发"| MQ
+        W_Heavy -->|"HTTP 截图渲染 (5005)"| Puppeteer["🧩 Puppeteer 微服务 (无头截图/滚动自愈)"]
+    end
+
+    %% 5. 数据统一落库 (从上往下自然汇聚，彻底杜绝线条交叉穿透)
+    Backend <-->|"大盘查询 / 状态读写"| DB[("🗄️ MongoDB 7.0 (联合索引大宽表)")]
+    OSINT -->|"异步结果直接入库"| DB
+    W_Light -->|"safe_insert_asset_many 批量写入"| DB
+    W_Heavy -->|"bulk_write 批量写入"| DB
+    W_Git -->|"原子 upsert 写入"| DB
+
+    Autoheal["🛡️ Autoheal 守护探针"] -.->|"docker.sock 探活与秒级自愈"| WorkerCluster
+
+    classDef default fill:#fbfbfb,stroke:#e0e0e0,stroke-width:1px;
+    classDef core fill:#eef2ff,stroke:#6366f1,stroke-width:2px;
+    classDef ai fill:#f5f3ff,stroke:#8b5cf6,stroke-width:2px;
+    classDef db fill:#ecfdf5,stroke:#10b981,stroke-width:2px;
+    classDef micro fill:#fffbeb,stroke:#f59e0b,stroke-width:1px;
     
-    Nginx -->|REST API| Backend["⚙️ Backend API (Flask)"]
-    MCP -->|工具调用| Backend
-    
-    Backend <--> DB[("🗄️ MongoDB (资产大宽表)")]
-    
-    Backend -->|下发任务| MQ(("⚡ RabbitMQ"))
-    MQ -->|异步消费| Workers["⚙️ Celery Workers 集群"]
-    
-    Workers -->|结果落地| DB
-    
-    Workers --> OSINT["🧩 OSINT 情报微服务"]
-    Workers --> Puppeteer["🧩 Puppeteer 截图微服务"]
-    Workers --> Nuclei["🔥 Nuclei 扫描与爬虫引擎"]
-    Autoheal["🛡️ Autoheal 自愈守护"] -.->|监控探活| Workers
-    
-    classDef default fill:#f9f9f9,stroke:#333,stroke-width:1px;
-    classDef core fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
-    class Nginx,Backend,Workers core;
+    class Nginx,Backend,WorkerCluster,W_Light,W_Heavy,W_Git core;
+    class Agent,MCP ai;
+    class DB,MQ db;
+    class OSINT,Puppeteer,Autoheal,Scheduler micro;
 ```
 
-### 核心模块解析：
+### 核心架构要点：
 
-1. 🖥️ **展示层 (Frontend)**：基于 **Vue 3.5** + **Vite 5.4** 构建，生产环境由 **Nginx** 托管，提供 HTTPS 安全网关与 **Basic Auth 前置防御**。
-2. ⚙️ **业务 API 层 (Backend)**：基于 **Python 3.13+** 与 **Flask**，处理核心业务逻辑与 JWT 鉴权。
-3. 🤖 **AI 扩展层 (MCP Server)**：*(新!)* 独立集成 **Model Context Protocol** 服务，赋能外部 AI 大模型/Agent 直接接入并调度底层检索工具。
-4. ⚡ **消息与执行层 (Broker & Workers)**：采用 **RabbitMQ** + **Celery** 分布式集群，高效解耦调度 **Nuclei** 扫描与威胁监控等高并发任务。
-5. 🗄️ **数据存储 (Database)**：基于 **MongoDB 7.0**，承载千万级大宽表资产数据与漏洞结果落地。
-6. 🧩 **扩展微服务群 (Microservices)**：*(新!)* 包含 Node.js Puppeteer 渲染容器与 OSINT 情报容器，专职无头渲染与异步信息收集，彻底消除主节点任务阻塞。
+1. 🖥️ **展示与网关 (Frontend / Nginx)**：基于 **Vue 3.5 + Nginx**，支持全站表格/操作栏 **Sticky 悬浮吸附**与 **Basic Auth 前置网关防御**。
+2. ⚙️ **业务与 AI 赋能 (Backend / MCP)**：基于 **Python 3.13 + Gunicorn**；内置 **原生 Python MCP** 赋能 AI Agent 调度与 13 维全景大盘导出。
+3. 🧩 **OSINT 独立微服务**：专职天眼查与 ICP 异步情报收集，由 Backend 直调协程池，**彻底脱离 Celery 队列杜绝假死**。
+4. ⚡ **多队列 Worker 集群**：拆分**轻量/重载/威胁情报**独立队列；重任务严格限制子进程生命周期彻底根除内存泄露。
+5. 🛡️ **微服务与自愈守护 (Puppeteer / Autoheal)**：独立容器专职无头截图并支持滚动自愈；**Autoheal 实时探针秒级恢复容器死锁**。
+6. 🗄️ **高吞吐持久层 (MongoDB 7.0)**：全线升级 `bulk_write` 批量落库，核心表覆盖联合唯一索引并设 1GB 内存池保护。
 
 ---
 
-## 🚀 部署指南
+## <span id="quick-deploy"></span>🚀 部署指南
 
-### 生产部署 (公网单VPS一键部署) ⭐ 推荐
+### 生产部署 (单 VPS 一键秒级上线) ⭐ 推荐
 
-**适用场景**：国内云服务器、企业内网。
-**基准耗时**：裸机从零部署约 **13 分钟**；自带 Docker 环境仅需 **2 分钟**。
+**适用环境**：公网云服务器 (Ubuntu / Debian / CentOS / 统信等)、企业内网服务器。  
+**预估耗时**：自带 Docker 环境仅需 **1~2 分钟**；全新裸机从零安装约 **3~5 分钟**。
 
 **核心优势**：
-* **⚡ 国内满速**：直连阿里云公开镜像，无惧 GitHub 网络阻断。
-* **📦 极简轻量**：免环境配置、免 `docker login`，剔除冗余编译链，镜像减重超 700MB。
-* **🛡️ 极致防护**：自动签发 SSL 并强制生成 **Basic Auth 前置拦截**，核心组件全内网隔离。
-* **🔄 平滑热更**：支持从 Web 端一键平滑重启升级，彻底免去 SSH 登录。
-* **🩺 智能就绪检测**：内置 API 健康轮询机制，确保服务 100% 启动后无缝访问，告别 502 报错。
-* **🚀 性能调优**：Nginx 深度定制，强制开启 Gzip 压缩拦截大文件明文传输，带宽消耗锐减，前端秒级响应。
+* ⚡ **国内极限满速**：直连阿里云北京 ACR 镜像私库，彻底告别海外网络阻断。
+* 📦 **开箱即用极简**：免复杂环境配置、免 `docker login`，剔除冗余编译链。
+* 🛡️ **双层安全防护**：内置 SSL 证书与 **Basic Auth 前置网关防御**，核心组件全私有网络隔离。
+* 🔄 **Web 平滑热更**：支持直接在管理后台一键无感热升级，免去繁琐的 SSH 终端操作。
+* 🩺 **全自动健康探活**：内置 API 就绪轮询机制与 Swap 内存自愈，服务就绪再放行，告别 502 报错。
+
+---
 
 #### 🚀 部署方式选择
 
-**方法一：防阻断一键部署（⭐ 推荐，适用于国内服务器）**
+##### 方法一：国内极速一键部署（⭐ 推荐 · 绕过 GitHub 阻断）
 
-在全新的 Ubuntu/Debian 终端 (需 root 权限) 直接复制执行以下连缀命令。它会自动安装 Docker、从阿里云镜像提取最新部署脚本并一键拉起：
+在服务器终端 (需 root 权限) 粘贴并执行以下连缀指令。脚本将自动安装 Docker、自愈配置 Swap、从阿里云提取最新配置并一键拉起：
 
 ```bash
-# 1. 安装基础依赖
+# 1. 安装基础工具并创建目录
 apt-get update && apt-get install -y docker.io docker-compose-v2 openssl curl && \
-# 2. 创建并进入工作目录
 mkdir -p ~/ARL-Next && cd ~/ARL-Next && \
-# 3. 从阿里云公开仓库拉取最新镜像
+# 2. 从阿里云国内镜像中提取全套部署编排
 docker pull crpi-laul1izptqrf0tkf.cn-beijing.personal.cr.aliyuncs.com/owl234-arl-prod/arl-web:latest && \
-# 4. 核心黑科技：绕过 GFW 网络阻断，直接从镜像中提取全套部署配置
 docker rm -f arl-temp 2>/dev/null || true && \
 docker create --name arl-temp crpi-laul1izptqrf0tkf.cn-beijing.personal.cr.aliyuncs.com/owl234-arl-prod/arl-web:latest && \
 docker cp arl-temp:/code/start-prod.sh ./ && \
@@ -156,19 +208,15 @@ docker cp arl-temp:/code/updater ./ && \
 docker cp arl-temp:/code/version.txt ./ && \
 docker cp arl-temp:/code/frontend ./ && \
 docker rm arl-temp && \
-# 5. 赋予权限并执行一键安装脚本
+# 3. 赋予权限并启动
 chmod +x start-prod.sh && \
 bash start-prod.sh
 ```
 
-**方法二：Github 浅克隆部署（适用于海外服务器 / 需保留源码）**
+##### 方法二：GitHub 源码克隆部署（适用于海外服务器 / 需二次开发）
 
-> [!WARNING]
-> 该方法极度依赖对 Github 的网络连通性。如果 `git clone` 卡住，国内机器请务必使用 **方法一** 或手动下载源码 Zip 包上传。
-
-若网络允许，可直接拉取源码运行：
-
-> 💡 **提示**：`start-prod.sh` 内置了全套环境探针。即使是全新的裸机，脚本也会自动检测并安装 Docker 等基础依赖，全程无需人工干预。
+> [!TIP]
+> `start-prod.sh` 内置全套环境探针，裸机运行亦会自动安装 Docker 并优化内核配置。
 
 ```bash
 git clone --depth 1 https://github.com/owl234/ARL-Next.git && cd ARL-Next
@@ -178,74 +226,128 @@ bash start-prod.sh
 
 ---
 
-### 🔑 登录与配置
+#### 🔑 访问与初始凭据
 
-访问 `https://<你的服务器IP>:5173` 即可登录（首次自签名证书请无视浏览器不安全提示）。
+部署完成后，在浏览器中访问：`https://<你的服务器IP>:5173`（首次自签名证书请无视浏览器不安全提示）。
 
-> [!IMPORTANT]
-> **默认安全凭据（双重验证）：**
-> 1. **首层网关拦截 (Basic Auth)**：弹窗账号 `admin` / 密码 `arl_next`
-> 2. **系统业务面板**：系统账号 `admin` / 密码 `arlpass`
+| 验证层级 | 默认账号 | 默认密码 | 说明 |
+| :--- | :--- | :--- | :--- |
+| **第一层：Nginx Basic Auth 网关** | `admin` | `arl_next` | 前置防扫描器爆破，可在系统设置中一键关闭或修改 |
+| **第二层：ARL-Next 系统登录** | `admin` | `arlpass` | 平台主账号，首次登录后建议立即修改 |
 
 > [!TIP]
 > **商业证书替换 (可选)**：将您申请的真实 SSL 证书重命名为 `arl.crt` 和 `arl.key` 放至 `ssl-certs/` 目录，然后再次执行 `bash start-prod.sh` 即可。
 ---
 
-### 开发环境部署 (前端本地 + Docker后端)
+### 💻 开发环境部署 (前端本地 + Docker 后端)
 
-- 👥 **适用群体**：二次开发与安全研究者。
-- ⚡ **核心优势**：前后端彻底解耦，双端热重载（Hot Reload）极速生效。
-- ⚙️ **前置条件**：本地已安装 Docker 与 Node.js (脚本会自动处理 pnpm 依赖)。
+- 👥 **适用场景**：二次开发、PoC 插件编写与深度调试。
+- ⚡ **核心优势**：前后端彻底解耦，**双端热重载 (Hot Reload)** 实时生效，无需重复打包。
+- ⚙️ **前置依赖**：本地已安装 Docker 与 Node.js 18+ (脚本会自动检测并配置 pnpm 环境)。
 
-#### 🚀 一键启动
+#### 🚀 一键拉起开发环境
 
 ```bash
 git clone https://github.com/owl234/ARL-Next.git && cd ARL-Next
-# 自动在后台拉起后端 Docker 容器，并在前台启动 Vite 前端服务
+# 自动在后台启动后端容器组 (API / Worker / MongoDB / RabbitMQ)，并在前台启动 Vite 前端服务
 bash start-dev.sh
 ```
 
-访问 `http://localhost:5173` 开始开发（默认凭据：`admin` / `arlpass`）。
+启动完成后，访问 `http://localhost:5173` 即可实时预览开发界面（默认凭据：`admin` / `arlpass`）。
+
+---
+
+### 🗄️ 开发者调试端口与数据库直连 (开发环境专用)
 
 > [!NOTE]
-> **开发指南：**
-> * **双端热重载**：后端修改本地代码保存即生效，前端 Vite 实时热重载。
-> * **API与安全**：后端接口暴露于 `5001` 端口；若需开启 HTTPS，请将自签证书放至 `certs/` 目录。
+> 生产环境为保障安全性已默认切断所有底层中间件外网端口。开发环境下可通过以下地址直连调试：
 
----
-
-## 🗄️ 数据库直连 (开发环境专用)
-
-生产环境默认切断了所有底层端口映射以保证安全。开发调试时，可通过以下凭据直连排查：
-
-| 组件名称 | 直连地址 / URI | 账号 | 密码 | 协议/用途 |
+| 调试组件 | 访问地址 / 连接串 | 账号 | 密码 | 说明 / 用途 |
 | :--- | :--- | :--- | :--- | :--- |
-| **🍃 MongoDB** | `mongodb://admin:admin@127.0.0.1:27018/arl?authSource=admin` | `admin` | `admin` | DB 读写直连 |
-| **🐇 RabbitMQ** | `http://127.0.0.1:15673` | `admin` | `admin` | Web 管理后台 |
-| **🐇 RabbitMQ** | `127.0.0.1:5673` | `admin` | `admin` | AMQP 协议端口 |
+| **🍃 MongoDB 7.0** | `mongodb://admin:admin@127.0.0.1:27018/arl?authSource=admin` | `admin` | `admin` | Navicat / Compass 数据库直连 |
+| **🐇 RabbitMQ 管理台** | `http://127.0.0.1:15673` | `admin` | `admin` | 消息队列与消费者状态监控 |
+| **🐇 RabbitMQ AMQP** | `amqp://admin:admin@127.0.0.1:5673/` | `admin` | `admin` | Celery 任务协议端口 |
+| **⚙️ Backend API** | `http://127.0.0.1:5001/api/` | — | — | 后端 Flask RESTful 调试直连 |
+| **🧩 OSINT 微服务** | `http://127.0.0.1:16182/docs` | — | — | 天眼查/ICP 异步微服务 Swagger |
 
 ---
 
-## ❓ 常见问题 (FAQ)
+## ❓ 常见问题与运维排错 (FAQ)
 
-<details>
-<summary><b>Q: 点击 Web 端的“一键系统更新”时，提示 <code>[ERROR]触发更新失败，服务返回异常状态码</code> 怎么办？</b></summary>
+<details open>
+<summary><b>Q1: 首次通过 HTTPS 访问时，浏览器提示“不安全 / 您的连接不是私密连接”？</b></summary>
 <br/>
 
-**A:** 这种情况通常是因为底层的守护进程卡死。请通过 SSH 登录到您的宿主机终端，执行以下命令重启更新服务即可恢复：
+**A:** 系统首次启动时会自动签发本地自签名 SSL 证书。
+- 点击浏览器页面的 **“高级” ➔ “继续前往 (不安全)”** 即可正常访问（Chrome 浏览器亦可在页面任意空白处直接键盘盲打 `thisisunsafe` 跳过警告）。
+- **配置真实域名证书**：将您申请的证书重命名为 `arl.crt` 和 `arl.key` 放至 `ssl-certs/` 目录，执行 `bash start-prod.sh` 即可无缝切换。
+</details>
 
+<details>
+<summary><b>Q2: 忘记系统登录密码或 Basic Auth 防爆破凭证怎么办？</b></summary>
+<br/>
+
+**A:** 在服务器终端执行以下命令即可一键重置：
+- **重置平台管理员账号 (admin / arlpass)**：
+  ```bash
+  docker exec -it arl-web-prod python3 /code/backend/inject_user.py
+  ```
+- **重置/查看 Basic Auth 凭据**：编辑工作目录下的 `frontend/.htpasswd`，或登录系统后在 **「系统设置」➔「安全防护」** 中一键热修改/关闭。
+</details>
+
+<details>
+<summary><b>Q3: 点击 Web 端的“一键系统更新”时，提示 <code>[ERROR]触发更新失败</code>？</b></summary>
+<br/>
+
+**A:** 这种情况通常是因为宿主机更新守护进程未响应。请通过 SSH 登录终端执行以下命令重启更新服务：
 ```bash
 sudo systemctl restart arl-updater.service
 ```
+</details>
 
+<details>
+<summary><b>Q4: 扫描任务较多时，如何调整系统并发性能？</b></summary>
+<br/>
+
+**A:** ARL-Next 支持**动态热调整并发**，无需重启容器！
+- 登录平台 ➔ 进入 **「系统设置」** 页面；
+- 可视化调整 **轻任务并发数**（DNS/端口/指纹）、**重任务并发数**（Nuclei/PoC）及 **OSINT 并发数**，保存后系统将自动热生效。
+</details>
+
+<details>
+<summary><b>Q5: 常用 Docker 容器维护与日志排查命令速查？</b></summary>
+<br/>
+
+```bash
+# 查看所有容器运行状态与健康探针
+docker compose -f docker-compose.prod.yml ps
+
+# 实时查看扫描 Worker 执行日志
+docker compose -f docker-compose.prod.yml logs -f arl-worker
+
+# 平滑停止或重启全部服务
+docker compose -f docker-compose.prod.yml restart
+```
 </details>
 
 ---
 
-## 📜 版本更新历史
+## <span id="changelog"></span>📜 版本更新历史
 
 <details open>
-<summary><b>🚀 v1.1.8 (当前版本)</b></summary><br/>
+<summary><b>🚀 v1.2.0 (当前版本)</b></summary><br/>
+
+* **交互与体验**：全站核心数据表格与顶部操作栏封装并引入悬浮吸附（`useSticky`）与局部平滑滚动，规避长页面滚动遮挡；统一全局分页器（`useGlobalPageSize`，支持单页 500 条）并实现 `localStorage` 持久化记忆；引入 Vue `Keep-Alive` 页面缓存与返回静默刷新机制。
+* **现代化字典系统**：重构字典管理为三栏交互布局（分类/列表/编辑），支持分类 Emoji 命名、新建字典抽屉、txt/dic 在线预览与编辑、未保存呼吸灯提示及一键安全删除；重构字典加载与上传校验模块，收敛路径遍历风险。
+* **调度与监控重构**：资产分组下发监控任务新增支持「周期性监控」与「一次性扫描」双模切换，一键下发即时比对增量与变动并精准反馈成功数；重构调度器执行引擎，引入二次防重消费校验与随机休眠，规避队列积压导致并发拉起重复任务；新增 `monitor_diff.py` 动态比对引擎，实现 13 类资产毫秒级基线对比、`new`/`update` 增量打标、未变动资产过滤与 Syslog 审计汇总；修复 SimHash 与联合索引计算，收敛监控防抖失效与内存泄漏。
+* **告警推送升级**：全面重构 `push.py` 多通道告警引擎，支持 13 类资产新增（🌟）与变动（🔄）的 Markdown / HTML 结构化报文推送；原生适配钉钉、企业微信、飞书、Telegram 及 Email，内置 3500 字符防超长截断保护与无变动干净摘要。
+* **扫描链路与容错隔离**：在 `CommonTask`、`DomainTask`、`IPTask`、`RiskCruising` 中全线引入 `safe_phase` 上下文管理器，实现各扫描阶段异常捕获与耗时审计，规避单插件报错导致 Celery 任务崩溃；调整 `nuclei_scan` 扫描时序至末尾防止目标被阻断；放宽 Nuclei 超时至 15 天；优化 AlienVault/Chaos 查询超时与天眼查防风控延时；文件泄露爆破改用生成器独立迭代规避漏扫。
+* **高吞吐持久层**：全线模块升级 `safe_insert_asset_many` 与 `bulk_write` 批量入库，覆盖全量核心集合，消除 N+1 读写瓶颈与高并发主键冲突；支持轻重任务及 OSINT 并发数热扩缩容。
+* **AI 原生与运维更新**：MCP 服务由 Node.js 彻底重构为轻量原生 Python 服务（FastMCP），输出深度重构为 AI 原生 CSV 流与 13 维全景资产大盘，Token 消耗降低 80%+；重构 `updater/updater.py` 支持生产镜像覆盖与开发环境 `git pull` 双模更新；优化 `start-prod.sh` 宿主机 Swap 精准探测与 Nginx Gzip 压缩分发。
+</details>
+
+<details>
+<summary><b>v1.1.8</b></summary><br/>
 
 * **架构跃升**：核心运行环境全面跨代至 **Python 3.13** 与 **MongoDB 7.0**。新增 `upgrade-mongo.sh` 自动化脚本，实现数据库大版本的无损平滑迁移。
 * **内存治理**：引入极限防 OOM 机制。切换 RabbitMQ 为 Alpine 镜像，限制 MongoDB 最大内存池为 1GB；导出引擎重构为 `$group` 流式处理，彻底杜绝海量资产溢出。
@@ -358,63 +460,66 @@ sudo systemctl restart arl-updater.service
 
 本项目站在巨人的肩膀上，特此鸣谢以下项目与团队：
 
-* **核心架构**：基于原版 [ARL 灯塔](https://github.com/TophantTechnology/ARL) 重构，并参考了 [Aabyss-Team/ARL](https://github.com/Aabyss-Team/ARL) 与 [adysec/ARL](https://github.com/adysec/ARL) 等优秀衍生版。
-* **指纹引擎**：感谢 **威零安全团队** (<img src="./img/weiling.jpg" width="18" height="18" align="absmiddle" /> 公众号) 提供的万级高质量指纹数据支撑。
-* **功能模块**：企业资产查询深度借鉴了 [ICP_Query](https://github.com/HG-ha/ICP_Query)，威胁监控模块汲取了 [github-cve-monitor](https://github.com/yhy0/github-cve-monitor) 的设计思路。
+* **核心架构**：基于经典开源项目 [ARL 资产侦察灯塔](https://github.com/TophantTechnology/ARL) 深度重构，并参考了 [Aabyss-Team/ARL](https://github.com/Aabyss-Team/ARL) 与 [adysec/ARL](https://github.com/adysec/ARL) 等优秀实践。
+* **指纹数据**：特别鸣谢 **威零安全团队** (<img src="./img/weiling.jpg" width="18" height="18" align="absmiddle" /> 公众号) 提供的万级高质量 Web 指纹库支撑。
+* **功能灵感**：OSINT 企业查询深度借鉴了 [ICP_Query](https://github.com/HG-ha/ICP_Query)，威胁监控模块汲取了 [github-cve-monitor](https://github.com/yhy0/github-cve-monitor) 的优雅设计。
 
-ARL-Next 将秉持开源互助的初心，持续为信息安全社区贡献力量！
+ARL-Next 将始终秉持开源互助的黑客初心，持续为网络安全攻防与企业防御建设贡献力量！
 
 ---
 
 ## 💖 赞助与支持
 
-本项目的持续开发与维护离不开社区的支持。感谢以下赞助者为开源生态做出的贡献。如果你觉得本项目对你有帮助，欢迎赞助支持。
+ARL-Next 的持续高频迭代离不开社区伙伴的慷慨支持。特别致谢以下赞助者：
 
-<p>
-  <img src="./img/buymeacoffee.png" width="200" alt="Buy Me A Coffee" />
+<p align="center">
+  <img src="./img/buymeacoffee.png" width="180" alt="Buy Me A Coffee" />
 </p>
-<a href="https://github.com/robotfish001">
-  <img src="https://github.com/robotfish001.png" width="50" height="50" style="border-radius: 50%;" alt="robotfish-001" title="robotfish-001"/>
-</a>
-<a href="https://github.com/phpmac">
-  <img src="https://github.com/phpmac.png" width="50" height="50" style="border-radius: 50%;" alt="phpmac" title="phpmac"/>
-</a>
+
+<p align="center">
+  <a href="https://github.com/robotfish001" target="_blank">
+    <img src="https://github.com/robotfish001.png" width="48" height="48" style="border-radius: 50%; margin: 0 8px;" alt="robotfish-001" title="感谢 robotfish-001 的支持！"/>
+  </a>
+  <a href="https://github.com/phpmac" target="_blank">
+    <img src="https://github.com/phpmac.png" width="48" height="48" style="border-radius: 50%; margin: 0 8px;" alt="phpmac" title="感谢 phpmac 的支持！"/>
+  </a>
+</p>
 
 ---
 
-## ⚠️ 声明与免责
+## ⚠️ 法律与免责声明
 
-> 本工具仅面向合法授权的企业安全建设、SRC 漏洞挖掘及学术研究。使用本工具时，请务必遵守当地法律法规（如《中华人民共和国网络安全法》）及目标平台的测试规范。**未经授权的探测属非法行为。**
-> 
-> 使用者因使用本工具造成的任何直接或间接的法律责任，由使用者自行承担，项目作者及贡献者不负任何连带责任。
+> [!CAUTION]
+> **合规红线与免责条款**：  
+> 本平台仅供经过合法授权的企业安全建设、SRC 漏洞挖掘、学术攻防演练及安全研究使用。使用本工具开展任何探测与扫描前，使用者必须确保已获得目标资产所有者的明确书面授权，并严格遵守《中华人民共和国网络安全法》及当地法律法规。  
+> **严禁利用本工具从事任何未授权的入侵、攻击或破坏行为！** 任何因违规滥用导致的网络安全事故或法律责任，均由使用者本人独立承担，本项目作者与贡献者不承担任何直接或连带责任。
 
 ---
 
-## 💬 问题反馈与交流
+## 💬 交流群与反馈通道
 
-- **反馈建议**：如遇 Bug 或有功能建议，欢迎提交 GitHub Issues。
-- **技术交流**：欢迎添加个人微信或加入 QQ 群，探讨安全开发与红蓝对抗技术。
-- **获取动态**：关注微信公众号【owl安全】，不定期获取安全干货与项目更新提醒！
+- 🐛 **Bug 提交与功能建议**：欢迎通过 [GitHub Issues](https://github.com/owl234/ARL-Next/issues) 提交反馈，通常 24 小时内跟进。
+- 💡 **技术交流与群聊**：欢迎扫码添加作者微信或加入 QQ 交流群，探讨资产测绘、红蓝对抗与 AI 自动化安全。
+- 📢 **版本发版动态**：关注微信公众号【**owl安全**】，第一时间接收最新发版、镜像更新与安全干货推送！
 
 <table align="center">
   <tr>
-    <td align="center" style="padding: 0 40px;"><b>个人微信</b></td>
-    <td align="center" style="padding: 0 40px;"><b>微信公众号 (owl安全)</b></td>
-    <td align="center" style="padding: 0 40px;"><b>QQ交流群</b></td>
+    <td align="center" style="padding: 10px 25px;"><b>👤 个人微信</b></td>
+    <td align="center" style="padding: 10px 25px;"><b>📢 微信公众号 (owl安全)</b></td>
+    <td align="center" style="padding: 10px 25px;"><b>🐧 QQ 技术交流群</b></td>
   </tr>
   <tr>
-    <td align="center" style="padding: 0 40px;"><img src="./img/wechat.png" alt="个人微信" width="250" /></td>
-    <td align="center" style="padding: 0 40px;"><img src="./img/wechat_public.jpg" alt="微信公众号 owl安全" width="250" /></td>
-    <td align="center" style="padding: 0 40px;"><img src="./img/qq_group.jpg" alt="QQ交流群" width="250" /></td>
+    <td align="center" style="padding: 10px 25px;"><img src="./img/wechat.png" alt="个人微信" width="210" /></td>
+    <td align="center" style="padding: 10px 25px;"><img src="./img/wechat_public.jpg" alt="微信公众号 owl安全" width="210" /></td>
+    <td align="center" style="padding: 10px 25px;"><img src="./img/qq_group.jpg" alt="QQ交流群" width="210" /></td>
   </tr>
 </table>
 
-
 ---
 
-## 🌟 Star History
+## 🌟 Star 走势与支持
 
-**⭐ 如果本项目为你的安全工作带来了便利，不妨点个 Star 支持一下！**
+**⭐ 如果 ARL-Next 解决了你长期被扫描假死困扰的痛点，请随手点亮右上角的 Star 支持一下！**
 
 <div align="center">
 

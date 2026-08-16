@@ -2,7 +2,6 @@ import threading
 from app.helpers import asset_site, asset_domain
 from app import utils
 from app.helpers.scope import get_scope_by_scope_id
-from app.helpers.message_notify import push_email, push_dingding
 from app.helpers.asset_site_monitor import is_black_asset_site
 from .baseThread import BaseThread
 from .fetchSite import fetch_site
@@ -11,70 +10,7 @@ from .fetchSite import fetch_site
 logger = utils.get_logger()
 
 
-class AssetSiteCompare(BaseThread):
-    def __init__(self, scope_id):
-        self._scope_id = scope_id
-        sites = asset_site.find_site_by_scope_id(scope_id)
-        logger.info("load {}  site from {}".format(len(sites), self._scope_id))
-        super(AssetSiteCompare, self).__init__(targets=sites, concurrency=15)
-        self.new_site_info_map = {}
-        self.mutex = threading.Lock()
-        self.site_change_map = {}
 
-    def work(self, site):
-        if is_black_asset_site(site):
-            logger.debug("{} in black asset site".format(site))
-            return
-
-        conn = utils.http_req(site)
-        item = {
-            "title": utils.get_title(conn.content),
-            "status": conn.status_code,
-            "body_length": len(conn.content)
-        }
-        with self.mutex:
-            self.new_site_info_map[site] = item
-
-    def compare(self):
-        site_info_list = asset_site.find_site_info_by_scope_id(scope_id=self._scope_id)
-        for site_info in site_info_list:
-            curr_site = site_info["site"]
-            # 访问不了的站点和黑名单站点，跳过
-            if curr_site not in self.new_site_info_map:
-                continue
-
-            new_site_info = self.new_site_info_map[curr_site]
-
-            old_title = site_info.get("title", "")
-            old_status = site_info.get("status", 0)
-            old_length = site_info.get("body_length", 0)
-
-            if new_site_info["title"] != old_title:
-                # 只关注标题不为空
-                if new_site_info["title"]:
-                    self.site_change_map[curr_site] = site_info
-
-            if new_site_info["status"] != old_status:
-                self.site_change_map[curr_site] = site_info
-
-            if old_length > 0:
-                length_diff = abs(new_site_info.get("body_length", 0) - old_length)
-                if length_diff / old_length > 0.05:
-                    self.site_change_map[curr_site] = site_info
-            elif new_site_info.get("body_length", 0) > 0:
-                utils.conn_db("asset_site").update_one(
-                    {"_id": site_info["_id"]},
-                    {"$set": {"body_length": new_site_info["body_length"]}}
-                )
-
-    def run(self):
-        self._run()
-        self.compare()
-
-        # 已经用完了省一点空间。
-        self.new_site_info_map.clear()
-
-        return self.site_change_map
 
 
 class AssetSiteMonitor(object):
@@ -125,6 +61,37 @@ class AssetSiteMonitor(object):
             return True
         return False
 
+    def compare_simhash(self, site_info, old_site_info):
+        curr_simhash = site_info.get("simhash", "")
+        old_simhash = old_site_info.get("simhash", "")
+        curr_site = site_info["site"]
+        
+        # 兼容旧数据没有 simhash 的情况，如果没有则回退比较长度
+        if not old_simhash:
+            return self.compare_length(site_info, old_site_info)
+
+        if curr_simhash and old_simhash and curr_simhash != old_simhash:
+            # 也可以计算 Hamming Distance，这里简单判断如果不等则有变动
+            # Simhash 设计使得即使局部不同，hash 也有差异，完全相等代表整体结构未变
+            import simhash
+            try:
+                distance = simhash.Simhash(int(curr_simhash)).distance(simhash.Simhash(int(old_simhash)))
+            except Exception:
+                distance = 0
+            
+            # 距离大于3，认为页面发生了实质性改变
+            if distance > 3:
+                item = {
+                    "site": curr_site,
+                    "length": site_info.get("body_length", 0),
+                    "old_length": old_site_info.get("body_length", 0),
+                    "distance": distance
+                }
+                logger.info("{} simhash distance {} => changed".format(curr_site, distance))
+                self.length_change_list.append(item)
+                return True
+        return False
+
     def compare_length(self, site_info, old_site_info):
         curr_length = site_info.get("body_length", 0)
         old_length = old_site_info.get("body_length", 0)
@@ -132,11 +99,13 @@ class AssetSiteMonitor(object):
 
         if old_length > 0 and curr_length > 0:
             diff = abs(curr_length - old_length)
-            if diff / old_length > 0.05:
+            # 引入绝对阈值，避免动态页面极小变动导致的误报
+            if diff > 500 and diff / old_length > 0.05:
                 item = {
                     "site": curr_site,
                     "length": curr_length,
-                    "old_length": old_length
+                    "old_length": old_length,
+                    "distance": -1
                 }
                 logger.info("{} length {} => {}".format(curr_site, old_length, curr_length))
                 self.length_change_list.append(item)
@@ -144,85 +113,102 @@ class AssetSiteMonitor(object):
         return False
 
     def build_change_list(self):
-        compare = AssetSiteCompare(scope_id=self.scope_id)
-        # 根据资产组中的站点去重新请求，并比对状态码和标题。
-        site_change_map = compare.run()
-        sites = list(site_change_map.keys())
-
-        if not sites:
-            logger.info("not found change ok site, scope_id: {}".format(self.scope_id))
+        # 1. 从数据库获取该 scope 下的所有站点信息游标
+        old_site_cursor = asset_site.find_site_info_by_scope_id(scope_id=self.scope_id)
+        if not old_site_cursor:
+            logger.info("not found old sites, scope_id: {}".format(self.scope_id))
             return
 
-        logger.info("found scope site {}, scope_id: {}".format(len(sites), self.scope_id))
+        from pymongo import UpdateOne
+        batch_size = 500
+        curr_date = utils.curr_date_obj()
+        
+        batch = []
+        total_count = 0
+        for site_doc in old_site_cursor:
+            batch.append(site_doc)
+            total_count += 1
+            if len(batch) >= batch_size:
+                self._process_site_batch(batch, curr_date)
+                batch = []
+                
+        if batch:
+            self._process_site_batch(batch, curr_date)
+            
+        logger.info("processed total scope site {}, scope_id: {}".format(total_count, self.scope_id))
 
-        site_info_list = fetch_site(sites)
+    def _process_site_batch(self, batch_docs, curr_date):
+        old_site_map = {item["site"]: item for item in batch_docs}
+        sites = list(old_site_map.keys())
 
-        for site_info in site_info_list:
+        # 2. 发起批量请求
+        new_site_infos = fetch_site(sites)
+        
+        from pymongo import UpdateOne
+        bulk_updates = []
+
+        for site_info in new_site_infos:
             curr_site = site_info["site"]
-            if curr_site not in site_change_map:
+            if curr_site not in old_site_map:
                 continue
 
-            old_site_info = site_change_map[curr_site]
+            old_site_info = old_site_map[curr_site]
             
             is_entry = "入口" in site_info.get("tag", [])
             was_entry = "入口" in old_site_info.get("tag", [])
 
-            # --- 防抖逻辑 (Plan 1 + Plan 3: 基于状态机的延迟确认与分级容错) ---
+            # --- 修复后的防抖逻辑 ---
             curr_status = site_info.get("status", 0)
-            if curr_status >= 400:
-                # 核心资产容忍 2 次周期连续失败，边缘资产容忍 3 次周期
+            # 仅针对网络波动/网关错误进行防抖 (0: 超时/无法解析, 502/503/504: 网关错误)
+            if curr_status in [0, 502, 503, 504]:
                 tolerance_limit = 2 if (is_entry or was_entry) else 3
                 current_count = old_site_info.get("consecutive_error_count", 0) + 1
                 site_info["consecutive_error_count"] = current_count
                 
-                # 若未达到硬状态阈值，拦截告警并挂起状态更新，仅刷新计数器
                 if current_count < tolerance_limit:
-                    utils.conn_db("asset_site").update_one(
+                    # 挂起告警，仅更新计数器
+                    bulk_updates.append(UpdateOne(
                         {"_id": old_site_info["_id"]},
                         {"$set": {"consecutive_error_count": current_count}}
-                    )
+                    ))
                     continue
             else:
                 site_info["consecutive_error_count"] = 0
-            # -------------------------------------------------------------
-
-            # 若新老数据都被判断为非入口，且不再是关键状态变更，则只静默同步数据库，不发告警
-            if not is_entry and not was_entry:
-                self.update_asset_site(old_site_info["_id"], site_info)
-                continue
+            # ------------------------
 
             changed = False
-            if self.compare_title(site_info, old_site_info):
+            
+            # 不再对比无效标题
+            if site_info.get("title") and self.compare_title(site_info, old_site_info):
                 changed = True
 
             if self.compare_status(site_info, old_site_info):
                 changed = True
 
-            if self.compare_length(site_info, old_site_info):
+            if self.compare_simhash(site_info, old_site_info):
                 changed = True
 
             if changed:
                 self.site_change_info_list.append(site_info)
                 
-            # 无论是否触发告警记录，都保证底层数据库能够跟现实世界状态对齐
-            self.update_asset_site(old_site_info["_id"], site_info)
+            # --- 修复并发更新问题：使用 bulk_write 和原子操作 ---
+            update_fields = site_info.copy()
+            update_fields["update_date"] = curr_date
+            
+            # 不覆盖 tag，改用 $addToSet 追加 (如果 site_info 带有新 tag)
+            new_tags = update_fields.pop("tag", [])
+            
+            update_op = {"$set": update_fields}
+            if new_tags:
+                update_op["$addToSet"] = {"tag": {"$each": new_tags}}
+                
+            bulk_updates.append(UpdateOne({"_id": old_site_info["_id"]}, update_op))
 
-    # 更新资产分组站点信息（修复：保留原有 _id、task_id 及截图等元数据，避免外键和文件引用断裂）
-    def update_asset_site(self, asset_id, site_info):
-        query = {
-            "_id": asset_id
-        }
-        copy_site_info = site_info.copy()
-        copy_site_info["update_date"] = utils.curr_date_obj()
-
-        # 读写 Merge 机制：合并原有的 tag，防止覆写人工标签
-        current_record = utils.conn_db("asset_site").find_one(query)
-        if current_record and "tag" in current_record:
-            old_tags = set(current_record.get("tag", []))
-            new_tags = set(copy_site_info.get("tag", []))
-            copy_site_info["tag"] = list(old_tags | new_tags)
-
-        utils.conn_db("asset_site").update_one(query, {"$set": copy_site_info})
+        if bulk_updates:
+            try:
+                utils.conn_db("asset_site").bulk_write(bulk_updates, ordered=False)
+            except Exception as e:
+                logger.error("bulk update asset_site error: {}".format(e))
 
     def build_status_html_report(self):
         html = ""
@@ -374,15 +360,17 @@ class AssetSiteMonitor(object):
 
     def build_length_markdown_report(self):
         tr_cnt = 0
-        markdown = "正文长度变化(>5%)\n\n"
+        markdown = "内容实质性变动(Simhash/长度)\n\n"
 
         for item in self.length_change_list:
             tr_cnt += 1
-            markdown += "{}. [{}]({})  {} => {} \n".format(tr_cnt,
+            distance_str = " (Distance: {})".format(item["distance"]) if item.get("distance", -1) != -1 else ""
+            markdown += "{}. [{}]({})  {} => {}{} \n".format(tr_cnt,
                                                            item["site"],
                                                            item["site"],
                                                            item["old_length"],
-                                                           item["length"]
+                                                           item["length"],
+                                                           distance_str
                                                            )
             if tr_cnt > 5:
                 break
@@ -458,16 +446,45 @@ class Domain2SiteMonitor(object):
 
         site_info_list = fetch_site(sites, concurrency=20, http_timeout=(5, 6))
 
-        # 过滤 502, 504
+        from urllib.parse import urljoin
+        
+        # 1. 绝对去重
+        dedup_map = {}
         for site_info in site_info_list:
             if site_info["status"] in [502, 504, 501, 422, 410]:
                 continue
-
-            # 过滤400 状态码
             if site_info["status"] == 400 and "400" in site_info["title"]:
                 continue
-
-            self.site_info_list.append(site_info)
+            curr_site = site_info["site"]
+            if curr_site not in dedup_map:
+                dedup_map[curr_site] = site_info
+                
+        # 2. 交叉对比与智能剪枝
+        to_remove = set()
+        for curr_site, site_info in dedup_map.items():
+            if site_info["status"] in [301, 302, 307, 308]:
+                headers = site_info.get("headers", {})
+                
+                # 检查是否包含有价值的情报（剔除常见无害 Header）
+                common_headers = {"server", "date", "content-type", "content-length", "connection", "location", "keep-alive", "x-powered-by"}
+                extra = [k for k in headers if k.lower() not in common_headers]
+                has_intel = "set-cookie" in [k.lower() for k in headers] or len(extra) > 0
+                
+                if not has_intel:
+                    location = headers.get("Location", headers.get("location", ""))
+                    if location:
+                        url_3xx = urljoin(curr_site, location)
+                        # 场景 A: 如果是同站协议升级 (http -> https) 且 https 已经在列表中，去除旧的
+                        if url_3xx.startswith("https://") and curr_site.startswith("http://"):
+                            if url_3xx.rstrip('/') == ("https" + curr_site[4:]).rstrip('/') and url_3xx in dedup_map:
+                                to_remove.add(curr_site)
+                                continue
+                        # 场景 B: 目标重定向地址已被收录
+                        elif url_3xx in dedup_map and url_3xx != curr_site:
+                            to_remove.add(curr_site)
+                            continue
+                            
+        self.site_info_list = [info for url, info in dedup_map.items() if url not in to_remove]
 
         self.build_report()
 

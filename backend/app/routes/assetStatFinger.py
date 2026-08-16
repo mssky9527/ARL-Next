@@ -1,5 +1,5 @@
 from bson import ObjectId
-from flask_restx import Resource, reqparse, fields, Namespace
+from flask_restx import fields, Namespace
 from app.utils import get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser
 from app.modules import ErrorMsg
@@ -13,6 +13,10 @@ base_search_fields = {
     'name': fields.String(required=False, description="指纹名称"),
     'name__eq': fields.String(required=False, description="指纹名称精确匹配"),
     "cnt": fields.Integer(description="数目"),
+    "update_date__dgt": fields.String(description="更新时间大于"),
+    "update_date__dlt": fields.String(description="更新时间小于"),
+    "insert_time__dgt": fields.String(description="插入时间大于"),
+    "insert_time__dlt": fields.String(description="插入时间小于"),
     "scope_id": fields.String(description="资产范围ID")
 }
 

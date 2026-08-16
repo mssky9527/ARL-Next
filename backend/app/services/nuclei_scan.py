@@ -82,7 +82,9 @@ class NucleiScan(object):
                     "vuln_severity": data.get("info", {}).get("severity", ""),
                     "vuln_url": data.get("matched-at", ""),
                     "curl_command": data.get("curl-command", ""),
-                    "target": data.get("host", "")
+                    "target": data.get("host") or data.get("matched-at", ""),
+                    "host": data.get("host") or data.get("matched-at", ""),
+                    "extracted_results": data.get("extracted-results", [])
                 }
                 results.append(item)
 
@@ -102,7 +104,7 @@ class NucleiScan(object):
                    ]
 
         logger.info(" ".join(command))
-        utils.exec_system(command, timeout=96*60*60)
+        utils.exec_system(command, timeout=15*24*60*60)
 
     def run(self):
         if not self.check_have_nuclei():

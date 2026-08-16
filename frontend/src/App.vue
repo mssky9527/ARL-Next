@@ -28,10 +28,10 @@ const updateGlobalCssVariables = () => {
   const hasBg = !!currentBgImage.value;
   
   root.style.setProperty('--arl-theme-color', currentPrimaryColor.value);
-  root.style.setProperty('--arl-bg-light', isDark ? (hasBg ? 'rgba(30, 41, 59, 0.3)' : 'rgba(30, 41, 59, 0.8)') : (hasBg ? 'rgba(241, 245, 249, 0.3)' : 'rgba(241, 245, 249, 0.8)'));
-  root.style.setProperty('--arl-bg-white', isDark ? (hasBg ? 'rgba(15, 23, 42, 0.3)' : 'rgba(30, 41, 59, 0.8)') : (hasBg ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.8)'));
-  root.style.setProperty('--arl-bg-layout', isDark ? (hasBg ? 'rgba(15, 23, 42, 0.3)' : '#0f172a') : (hasBg ? 'rgba(241, 245, 249, 0.3)' : '#f1f5f9'));
-  root.style.setProperty('--arl-border-color', isDark ? (hasBg ? 'rgba(51, 65, 85, 0.4)' : 'rgba(226, 232, 240, 0.8)') : (hasBg ? 'rgba(226, 232, 240, 0.4)' : 'rgba(226, 232, 240, 0.8)'));
+  root.style.setProperty('--arl-bg-light', isDark ? (hasBg ? 'rgba(17, 17, 17, 0.3)' : '#111111') : (hasBg ? 'rgba(241, 245, 249, 0.3)' : 'rgba(241, 245, 249, 0.8)'));
+  root.style.setProperty('--arl-bg-white', isDark ? (hasBg ? 'rgba(17, 17, 17, 0.3)' : '#111111') : (hasBg ? 'rgba(255, 255, 255, 0.3)' : 'rgba(255, 255, 255, 0.8)'));
+  root.style.setProperty('--arl-bg-layout', isDark ? (hasBg ? 'rgba(0, 0, 0, 0.3)' : '#000000') : (hasBg ? 'rgba(241, 245, 249, 0.3)' : '#f1f5f9'));
+  root.style.setProperty('--arl-border-color', isDark ? (hasBg ? 'rgba(51, 51, 51, 0.4)' : '#333333') : (hasBg ? 'rgba(226, 232, 240, 0.4)' : 'rgba(226, 232, 240, 0.8)'));
   root.style.setProperty('--arl-text-color', isDark ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)');
   
   if (isDark) {
@@ -51,8 +51,8 @@ const handleThemeChange = (e) => {
 
 const handleDarkModeChange = (e) => {
   isDarkMode.value = e.detail;
-  document.body.style.backgroundColor = e.detail ? '#0f172a' : '#f1f5f9';
-  document.documentElement.style.backgroundColor = e.detail ? '#0f172a' : '#f1f5f9';
+  document.body.style.backgroundColor = e.detail ? '#000000' : '#f1f5f9';
+  document.documentElement.style.backgroundColor = e.detail ? '#000000' : '#f1f5f9';
 };
 
 const handleBgImageChange = (e) => {
@@ -78,8 +78,8 @@ const currentTheme = computed(() => {
   return {
     algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
     token: { 
-      colorBgBase: isDark ? (hasBg ? 'rgba(30, 41, 59, 0.7)' : '#1e293b') : (hasBg ? 'rgba(255, 255, 255, 0.7)' : '#ffffff'),
-      colorBgLayout: isDark ? (hasBg ? 'rgba(15, 23, 42, 0.4)' : '#0f172a') : (hasBg ? 'rgba(241, 245, 249, 0.4)' : '#f1f5f9'),
+      colorBgBase: isDark ? (hasBg ? 'rgba(17, 17, 17, 0.7)' : '#111111') : (hasBg ? 'rgba(255, 255, 255, 0.7)' : '#ffffff'),
+      colorBgLayout: isDark ? (hasBg ? 'rgba(0, 0, 0, 0.4)' : '#000000') : (hasBg ? 'rgba(241, 245, 249, 0.4)' : '#f1f5f9'),
       colorPrimary: currentPrimaryColor.value, 
       colorLink: currentPrimaryColor.value, 
       colorLinkHover: currentPrimaryColor.value, 
@@ -88,10 +88,10 @@ const currentTheme = computed(() => {
       colorSuccess: '#4caf50',
       colorWarning: '#ffb300',
       colorError: '#e53935',
-      colorBgContainer: isDark ? (hasBg ? 'rgba(30, 41, 59, 0.3)' : '#1e293b') : (hasBg ? 'rgba(255, 255, 255, 0.4)' : '#ffffff'),
-      colorBgElevated: isDark ? (hasBg ? 'rgba(30, 41, 59, 0.4)' : '#1e293b') : (hasBg ? 'rgba(255, 255, 255, 0.5)' : '#ffffff'),
-      colorBorder: isDark ? (hasBg ? 'rgba(51, 65, 85, 0.4)' : 'rgba(51, 65, 85, 0.8)') : (hasBg ? 'rgba(217, 217, 217, 0.4)' : 'rgba(217, 217, 217, 0.8)'),
-      colorBorderSecondary: isDark ? 'rgba(30, 41, 59, 0.8)' : 'rgba(240, 240, 240, 0.8)',
+      colorBgContainer: isDark ? (hasBg ? 'rgba(17, 17, 17, 0.3)' : '#111111') : (hasBg ? 'rgba(255, 255, 255, 0.4)' : '#ffffff'),
+      colorBgElevated: isDark ? (hasBg ? 'rgba(17, 17, 17, 0.4)' : '#111111') : (hasBg ? 'rgba(255, 255, 255, 0.5)' : '#ffffff'),
+      colorBorder: isDark ? (hasBg ? 'rgba(51, 51, 51, 0.4)' : '#333333') : (hasBg ? 'rgba(217, 217, 217, 0.4)' : 'rgba(217, 217, 217, 0.8)'),
+      colorBorderSecondary: isDark ? 'rgba(34, 34, 34, 0.8)' : 'rgba(240, 240, 240, 0.8)',
       colorTextBase: isDark ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.85)',
       borderRadius: 8 
     }
@@ -121,8 +121,8 @@ onMounted(() => {
       document.body.classList.add('has-bg-image');
       document.documentElement.classList.add('has-bg-image');
     } else {
-      document.body.style.backgroundColor = isDarkMode.value ? '#0f172a' : '#f1f5f9';
-      document.documentElement.style.backgroundColor = isDarkMode.value ? '#0f172a' : '#f1f5f9';
+      document.body.style.backgroundColor = isDarkMode.value ? '#000000' : '#f1f5f9';
+      document.documentElement.style.backgroundColor = isDarkMode.value ? '#000000' : '#f1f5f9';
     }
   });
   
@@ -175,7 +175,7 @@ a:not([href]):hover {
 /* 毛玻璃遮罩层 */
 .glass-overlay {
   backdrop-filter: blur(8px);
-  background-color: v-bind('isDarkMode ? "rgba(15, 23, 42, 0.4)" : "rgba(255, 255, 255, 0.3)"');
+  background-color: v-bind('isDarkMode ? "rgba(0, 0, 0, 0.4)" : "rgba(255, 255, 255, 0.3)"');
   transition: all 0.3s;
 }
 
@@ -237,7 +237,7 @@ body.has-bg-image .ant-drawer-footer {
    ======================================================== */
 body.dark-mode .ant-card {
   border: 1px solid var(--arl-border-color) !important;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2) !important;
+  box-shadow: none !important;
 }
 
 body.dark-mode .ant-card-head {
@@ -245,7 +245,7 @@ body.dark-mode .ant-card-head {
 }
 
 body.dark-mode .ant-table-thead > tr > th {
-  background: rgba(30, 41, 59, 0.5) !important;
+  background: #111111 !important;
   border-bottom: 1px solid var(--arl-border-color) !important;
   color: rgba(255, 255, 255, 0.85) !important;
 }
@@ -255,7 +255,7 @@ body.dark-mode .ant-table-tbody > tr > td {
 }
 
 body.dark-mode .ant-table-tbody > tr:hover > td {
-  background: rgba(51, 65, 85, 0.4) !important;
+  background: #1a1a1a !important;
 }
 
 /* 分页组件在暗黑模式下的边框和背景优化 */

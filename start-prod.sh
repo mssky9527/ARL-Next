@@ -213,9 +213,10 @@ check_and_install_compose() {
 # 5. 检查并配置 2G Swap 以防 OOM
 check_and_configure_swap() {
     echo "⚙️ 正在检查宿主机 Swap 虚拟内存..."
-    local swap_size=$(free -g | awk '/^Swap:/ {print $2}')
-    if [ -n "$swap_size" ] && [ "$swap_size" -ge 1 ] 2>/dev/null; then
-        echo "✅ 检测到系统已有 Swap ($swap_size GB)，跳过自动配置。"
+    local swap_size_mb=$(free -m | awk '/^Swap:/ {print $2}')
+    if [ -n "$swap_size_mb" ] && [ "$swap_size_mb" -ge 1024 ] 2>/dev/null; then
+        local swap_size_gb=$(awk "BEGIN {printf \"%.1f\", $swap_size_mb/1024}")
+        echo "✅ 检测到系统已有 Swap (${swap_size_gb}G)，跳过自动配置。"
         return 0
     fi
     

@@ -17,20 +17,22 @@
       <a-collapse v-model:activeKey="activePanels" :bordered="false" style="background: transparent; margin-bottom: 40px;">
 
         <a-collapse-panel key="1" header="域名和IP配置">
-          <a-form-item label="域名爆破类型" required>
-            <a-select v-model:value="policyForm.domain_config.domain_brute_type">
-              <a-select-option value="test">测试字典</a-select-option>
-              <a-select-option value="big">大字典</a-select-option>
+          <a-form-item label="域名爆破字典" required>
+            <a-select v-model:value="policyForm.domain_config.domain_brute_type" placeholder="请选择字典">
+              <a-select-option v-for="item in domainDicts" :key="item.name" :value="item.name">{{ item.name }}</a-select-option>
+            </a-select>
+          </a-form-item>
+
+          <a-form-item label="智能子域爆破字典" required>
+            <a-select v-model:value="policyForm.domain_config.alt_dns_dict" placeholder="请选择字典">
+              <a-select-option v-for="item in altDnsDicts" :key="item.name" :value="item.name">{{ item.name }}</a-select-option>
             </a-select>
           </a-form-item>
 
           <a-form-item label="端口扫描类型" required>
-            <a-select v-model:value="policyForm.ip_config.port_scan_type">
-              <a-select-option value="test">测试</a-select-option>
-              <a-select-option value="top100">TOP100</a-select-option>
-              <a-select-option value="top1000">TOP1000</a-select-option>
-              <a-select-option value="all">全端口</a-select-option>
+            <a-select v-model:value="policyForm.ip_config.port_scan_type" placeholder="请选择字典或自定义">
               <a-select-option value="custom">自定义</a-select-option>
+              <a-select-option v-for="item in portDicts" :key="item.name" :value="item.name">{{ item.name }}</a-select-option>
             </a-select>
           </a-form-item>
 
@@ -84,6 +86,11 @@
         </a-collapse-panel>
 
         <a-collapse-panel key="3" header="站点和风险配置">
+          <a-form-item label="目录文件泄露字典" required>
+            <a-select v-model:value="policyForm.file_leak_dict" placeholder="请选择字典">
+              <a-select-option v-for="item in fileLeakDicts" :key="item.name" :value="item.name">{{ item.name }}</a-select-option>
+            </a-select>
+          </a-form-item>
           <a-form-item :wrapper-col="{ offset: 4, span: 16 }">
             <div style="display: flex; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--arl-border-color);">
               <a-checkbox :checked="isAllSiteSelected" @change="toggleAllSite">全选</a-checkbox>
@@ -92,7 +99,7 @@
               </a-input>
             </div>
             <div style="display: flex; flex-direction: column; gap: 12px;">
-              <a-checkbox v-show="matchSearch('1. 站点识别', siteSearch)" v-model:checked="policyForm.site_config.site_identify">1. 站点识别</a-checkbox>
+              <a-checkbox v-show="matchSearch('1. 站点与指纹识别', siteSearch)" v-model:checked="policyForm.site_config.site_identify">1. 站点与指纹识别</a-checkbox>
               <a-checkbox v-show="matchSearch('2. 搜索引擎调用', siteSearch)" v-model:checked="policyForm.site_config.search_engines">2. 搜索引擎调用</a-checkbox>
               <a-checkbox v-show="matchSearch('3. 站点爬虫', siteSearch)" v-model:checked="policyForm.site_config.site_spider">3. 站点爬虫</a-checkbox>
               <a-checkbox v-show="matchSearch('4. 文件泄露', siteSearch)" v-model:checked="policyForm.file_leak">4. 文件泄露</a-checkbox>
@@ -131,14 +138,6 @@
           </a-row>
         </a-collapse-panel>
 
-        <a-collapse-panel key="6" header="资产组配置">
-          <a-form-item label="关联资产组">
-            <a-select v-model:value="policyForm.scope_id" placeholder="请选择资产组" allowClear>
-              <a-select-option v-for="scope in scopeList" :key="scope._id" :value="scope._id">{{ scope.name }}</a-select-option>
-            </a-select>
-          </a-form-item>
-        </a-collapse-panel>
-
       </a-collapse>
 
       <div style="text-align: center; margin-bottom: 40px;">
@@ -168,19 +167,22 @@ const submitLoading = ref(false);
 
 const initPolicyForm = () => ({
   name: '', desc: '',
-  domain_config: { domain_brute: false, alt_dns: false, arl_search: false, dns_query_plugin: false, domain_brute_type: 'big' },
-  ip_config: { port_scan: false, service_detection: false, os_detection:false, ssl_cert: false, skip_scan_cdn_ip: false, port_scan_type: 'top100', port_custom: '', host_timeout_type: 'default', host_timeout: 0, port_parallelism: 32, port_min_rate: 60, exclude_ports: '' },
+  domain_config: { domain_brute: false, alt_dns: false, arl_search: false, dns_query_plugin: false, domain_brute_type: undefined, alt_dns_dict: undefined },
+  ip_config: { port_scan: false, service_detection: false, os_detection:false, ssl_cert: false, skip_scan_cdn_ip: false, port_scan_type: undefined, port_custom: '', host_timeout_type: 'default', host_timeout: 0, port_parallelism: 32, port_min_rate: 60, exclude_ports: '' },
   npoc_service_detection: false,
   site_config: { site_identify: false, search_engines: false, site_spider: false, findvhost: false, nuclei_scan: false, web_info_hunter: false },
   file_leak: false,
-  scope_id: undefined
+  file_leak_dict: undefined
 });
 
 const policyForm = reactive(initPolicyForm());
 
-const scopeList = ref([]);
 const pocList = ref([]);
 const bruteList = ref([]);
+const domainDicts = ref([]);
+const altDnsDicts = ref([]);
+const fileLeakDicts = ref([]);
+const portDicts = ref([]);
 
 const pocSearch = ref('');
 const bruteSearch = ref('');
@@ -255,13 +257,25 @@ const toggleAllSite = (e) => {
 onMounted(async () => {
   try {
     // 1. 并发预加载弹药库
-    const [scopeRes, pocRes, bruteRes] = await Promise.all([
-      request.get('/asset_scope/', { params: { size: 100 } }),
+    const [pocRes, bruteRes, dictRes] = await Promise.all([
       request.get('/poc/', { params: { plugin_type: 'poc', size: 10000 } }),
-      request.get('/poc/', { params: { plugin_type: 'brute', size: 10000 } })
+      request.get('/poc/', { params: { plugin_type: 'brute', size: 10000 } }),
+      request.get('/dictionary/list')
     ]);
+    if (dictRes.code === 200 && dictRes.data) {
+      domainDicts.value = dictRes.data.filter(item => item.category && item.category.includes('子域名爆破') && !item.category.includes('智能'));
+      altDnsDicts.value = dictRes.data.filter(item => item.category && item.category.includes('智能子域爆破'));
+      fileLeakDicts.value = dictRes.data.filter(item => item.category && (item.category.includes('目录文件泄露') || item.category.includes('目录与文件泄露')));
+      portDicts.value = dictRes.data.filter(item => item.category && item.category.includes('端口扫描策略'));
+      
+      if (!isEdit) {
+        if (domainDicts.value.length > 0) policyForm.domain_config.domain_brute_type = domainDicts.value[0].name;
+        if (altDnsDicts.value.length > 0) policyForm.domain_config.alt_dns_dict = altDnsDicts.value[0].name;
+        if (fileLeakDicts.value.length > 0) policyForm.file_leak_dict = fileLeakDicts.value[0].name;
+        if (portDicts.value.length > 0) policyForm.ip_config.port_scan_type = portDicts.value[0].name;
+      }
+    }
 
-    if (scopeRes.code === 200) scopeList.value = scopeRes.items || [];
     if (pocRes.code === 200) {
       const uniquePoc = new Map();
       (pocRes.items || []).forEach(p => {
@@ -292,7 +306,7 @@ onMounted(async () => {
         Object.assign(policyForm.site_config, data.policy.site_config);
         policyForm.npoc_service_detection = data.policy.npoc_service_detection;
         policyForm.file_leak = data.policy.file_leak;
-        policyForm.scope_id = data.policy.scope_config?.scope_id;
+        if (data.policy.file_leak_dict) policyForm.file_leak_dict = data.policy.file_leak_dict;
 
         // 插件状态精密回填：遍历后端返回的已开启插件，去长列表中打勾
         const pocMap = {};
@@ -329,9 +343,9 @@ const submitPolicy = async () => {
         npoc_service_detection: policyForm.npoc_service_detection,
         site_config: { ...policyForm.site_config },
         file_leak: policyForm.file_leak,
+        file_leak_dict: policyForm.file_leak_dict,
         poc_config,
-        brute_config,
-        scope_config: policyForm.scope_id ? { scope_id: policyForm.scope_id } : {}
+        brute_config
       }
     };
 

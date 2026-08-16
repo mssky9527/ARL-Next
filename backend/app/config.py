@@ -70,6 +70,7 @@ class ConfigMeta(type):
 
 
 class Config(object, metaclass=ConfigMeta):
+    basedir = basedir
     CELERY_BROKER_URL = ""
 
     MONGO_DB = ""
@@ -88,7 +89,7 @@ class Config(object, metaclass=ConfigMeta):
     SCREENSHOT_FAIL_IMG = os.path.join(basedir, 'dicts/noscreenshot.jpg')
     DRIVER_JS = os.path.join(basedir, 'tools/driver.js')
 
-    DOMAIN_DICT_TEST = os.path.join(basedir, 'dicts/domain_dict_test.txt')
+
     _DOMAIN_DICT_2W = os.path.join(basedir, 'dicts/domain_2w.txt')
     DNS_SERVER = os.path.join(basedir, 'dicts/dnsserver.txt')
 

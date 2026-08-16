@@ -21,6 +21,9 @@ class DomainSiteUpdate(object):
 
     def save_domain_info(self):
         domain_info_list = build_domain_info(self.domains)
+        from app.utils.monitor_diff import tag_monitor_diff
+        
+        filtered_list = []
         for domain_info_obj in domain_info_list:
             domain_info = domain_info_obj.dump_json(flag=False)
             domain_info["task_id"] = self.task_id
@@ -28,9 +31,13 @@ class DomainSiteUpdate(object):
             domain_parsed = utils.domain_parsed(domain_info["domain"])
             if domain_parsed:
                 domain_info["fld"] = domain_parsed["fld"]
-            utils.conn_db('domain').insert_one(domain_info)
+                
+            tag_monitor_diff("domain", domain_info)
+            if domain_info.get("change_status") != "unchanged":
+                utils.conn_db('domain').insert_one(domain_info)
+                filtered_list.append(domain_info_obj)
 
-        self.domain_info_list = domain_info_list
+        self.domain_info_list = filtered_list
 
     def probe_sites(self):
         available_domains = []
@@ -66,6 +73,15 @@ class DomainSiteUpdate(object):
             site_info["screenshot"] = file_name
 
         site_info_list = deduplicated_site_info_list
+        from app.utils.monitor_diff import tag_monitor_diff
+        
+        filtered_list = []
+        for info in site_info_list:
+            tag_monitor_diff("site", info)
+            if info.get("change_status") != "unchanged":
+                filtered_list.append(info)
+                
+        site_info_list = filtered_list
 
         if site_info_list:
             from pymongo import UpdateOne

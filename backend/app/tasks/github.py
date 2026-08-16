@@ -4,7 +4,6 @@ from app.services.githubSearch import GithubResult
 from app.modules import TaskStatus
 from app import utils
 from app.config import Config
-from app.utils import push
 
 logger = utils.get_logger()
 

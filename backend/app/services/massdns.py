@@ -137,23 +137,27 @@ def mass_dns(based_domain, words, wildcard_domain_ip=None):
     if wildcard_domain_ip is None:
         wildcard_domain_ip = []
 
-    domains = []
     is_fuzz_domain = "{fuzz}" in based_domain
-    for word in words:
-        word = word.strip()
-        if word:
-            if is_fuzz_domain:
-                # 高级模式：比如输入是 api-{fuzz}.test.com
-                domains.append(based_domain.replace("{fuzz}", word))
-            else:
-                # 常规模式：输入是 test.com，字典是 admin，拼装出 admin.test.com
-                domains.append("{}.{}".format(word, based_domain))
+    
+    def domain_generator():
+        count = 0
+        for word in words:
+            word = word.strip()
+            if word:
+                if is_fuzz_domain:
+                    yield based_domain.replace("{fuzz}", word)
+                else:
+                    yield "{}.{}".format(word, based_domain)
+                count += 1
+        
+        if not is_fuzz_domain:
+            yield based_domain
+            count += 1
+            
+        logger.info("start brute:{} words:{} wildcard_record:{}".format(
+            based_domain, count, ",".join(wildcard_domain_ip)))
 
-    if not is_fuzz_domain:
-        domains.append(based_domain)
-
-    logger.info("start brute:{} words:{} wildcard_record:{}".format(
-        based_domain, len(domains), ",".join(wildcard_domain_ip)))
+    domains = domain_generator()
 
     # 实例化上面的大杀器并开火
     mass = MassDNS(domains, mass_dns_bin=Config.MASSDNS_BIN,

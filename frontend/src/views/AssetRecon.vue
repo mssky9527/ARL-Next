@@ -1,19 +1,21 @@
 <template>
   <div style="background-color: var(--arl-bg-layout); padding: 24px; min-height: calc(100vh - 64px);">
+    <div ref="actionBarRef" style="position: sticky; top: 0px; z-index: 10; background-color: var(--arl-bg-layout); margin: -24px -24px 16px -24px; padding: 24px 24px 16px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+
     <div style="margin-bottom: 16px; display: flex; align-items: center; gap: 12px;">
       <a-button type="primary" @click="showTycModal">新建企业资产查询</a-button>
       <a-button type="primary" @click="showModal">新建 ICP 查询</a-button>
     </div>
 
-    <div class="search-row" style="margin-bottom: 20px; background-color: var(--arl-bg-light); padding: 16px; border-radius: 4px;">
+    <div class="search-row" style="margin-bottom: 16px; ">
       <a-form :model="searchForm" layout="inline" style="row-gap: 16px;">
         <a-form-item label="任务名:">
           <a-input v-model:value="searchForm.name" placeholder="请输入任务名" style="width: 230px;" allowClear @pressEnter="onSearch">
             <template #suffix><search-outlined @click="onSearch" style="color: var(--arl-text-color); opacity: 0.25; cursor: pointer;"/></template>
           </a-input>
         </a-form-item>
-        <a-form-item label="公司名称:">
-          <a-input v-model:value="searchForm.target" placeholder="请输入公司名称" style="width: 230px;" allowClear @pressEnter="onSearch">
+        <a-form-item label="查询目标:">
+          <a-input v-model:value="searchForm.target" placeholder="请输入查询目标" style="width: 230px;" allowClear @pressEnter="onSearch">
             <template #suffix><search-outlined @click="onSearch" style="color: var(--arl-text-color); opacity: 0.25; cursor: pointer;"/></template>
           </a-input>
         </a-form-item>
@@ -26,12 +28,16 @@
     </div>
 
     <div style="margin-bottom: 16px;">
+      <a-button style="margin-right: 16px;" @click="resetSearch">清 除</a-button>
       <a-popconfirm title="确定要批量删除选中的任务吗？" @confirm="handleBatchDelete">
-        <a-button danger :disabled="selectedRowKeys.length === 0">批量删除</a-button>
+        <a-button danger :disabled="selectedRowKeys.length === 0" style="margin-right: 16px;">批量删除</a-button>
       </a-popconfirm>
+      <a-button type="primary" :disabled="selectedRowKeys.length === 0" @click="handleBatchExport">批量导出</a-button>
     </div>
 
-    <a-table
+    
+    </div>
+<a-table :sticky="stickyConfig"
         :dataSource="taskList"
         :columns="columns"
         :loading="loading"
@@ -50,8 +56,10 @@
           <a-tag :color="getStatusColor(record.status)">{{ record.status }}</a-tag>
         </template>
         <template v-else-if="column.key === 'statistic'">
-          <span v-if="record.statistic">{{ record.statistic.asset_cnt || 0 }}</span>
-          <span v-else>0</span>
+          <div v-if="record.statistic" style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <a-badge :count="(record.statistic.asset_cnt || 0) - (record.statistic.invest_cnt || 0)" title="核心资产" />
+            <a-badge v-if="record.statistic.invest_cnt !== undefined" :count="record.statistic.invest_cnt" title="对外投资" :number-style="{ backgroundColor: '#52c41a' }" />
+          </div>
         </template>
         <template v-else-if="column.key === 'action'">
           <a-space size="small">
@@ -69,7 +77,7 @@
 
     <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 16px;">
       <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(pagination.total / pagination.pageSize) || 1 }} 页 / {{ pagination.total }} 条数据</div>
-      <a-pagination v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" @showSizeChange="handleTableChange" />
+      <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" @showSizeChange="handleTableChange" />
     </div>
   </div>
 
@@ -93,8 +101,8 @@
         <a-input v-model:value="formState.name" placeholder="请输入任务名称" />
       </a-form-item>
 
-      <a-form-item label="公司名称" name="target" :rules="[{ required: true, message: '请输入公司名称' }]">
-        <a-input v-model:value="formState.target" placeholder="请输入公司名称" />
+      <a-form-item label="查询目标" name="target" :rules="[{ required: true, message: '请输入查询目标' }]">
+        <a-input v-model:value="formState.target" placeholder="请输入查询目标" />
       </a-form-item>
 
       <a-form-item label="查询类型" name="query_type" :rules="[{ required: true, message: '请至少选择一种查询类型' }]">
@@ -121,8 +129,8 @@
     <a-form
         ref="tycFormRef"
         :model="tycFormState"
-        :label-col="{ style: { width: '90px' } }"
-        :wrapper-col="{ style: { width: 'calc(100% - 90px)' } }"
+        :label-col="{ style: { width: '110px' } }"
+        :wrapper-col="{ style: { width: 'calc(100% - 110px)' } }"
     >
       <a-alert
           v-if="!tycConfigCheck.valid && !tycConfigCheck.loading"
@@ -146,7 +154,11 @@
       </a-form-item>
 
       <a-form-item label="查询层数" name="depth">
-        <a-input-number v-model:value="tycFormState.depth" :min="0" :max="5" style="width: 100%;" />
+        <a-input-number v-model:value="tycFormState.depth" :min="0" :max="20" style="width: 100%;" />
+      </a-form-item>
+
+      <a-form-item label="最低投资比例" name="invest_ratio" tooltip="仅对对外投资生效，大于等于该比例才进行递归。0或为空表示不限制">
+        <a-input-number v-model:value="tycFormState.invest_ratio" addon-after="%" :min="0" :max="100" style="width: 100%;" placeholder="0 表示不限制" />
       </a-form-item>
 
       <a-form-item label="查询类型" name="query_type" :rules="[{ required: true, message: '请至少选择一种查询类型' }]">
@@ -201,16 +213,27 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+defineOptions({ name: 'AssetRecon' });
+
+import { ref as _ref_for_sticky, ref, reactive, onMounted, watch, onActivated } from 'vue';import { useSticky } from '../utils/useSticky';
+const actionBarRef = _ref_for_sticky(null);
+const { stickyConfig } = useSticky(actionBarRef);
+
 import { message, Modal } from 'ant-design-vue';
 import { useRouter } from 'vue-router';
 import { SearchOutlined } from '@ant-design/icons-vue';
 import request from '../utils/request';
+import { useGlobalPageSize } from '../utils/useGlobalPageSize';
 
 const router = useRouter();
 const taskList = ref([]);
 const loading = ref(false);
-const pagination = reactive({ current: 1, pageSize: 10, total: 0 });
+const globalPageSize = useGlobalPageSize(10);
+const pagination = reactive({ current: 1, pageSize: globalPageSize.value, total: 0 });
+
+watch(() => pagination.pageSize, (newSize) => {
+  globalPageSize.value = newSize;
+});
 
 const selectedRowKeys = ref([]);
 const onSelectChange = (keys) => {
@@ -229,7 +252,7 @@ const syncFormState = reactive({
 
 const columns = [
   { title: '任务名', dataIndex: 'name', key: 'name', width: 180 },
-  { title: '公司名称', dataIndex: 'target', key: 'target', width: 220 },
+  { title: '查询目标', dataIndex: 'target', key: 'target', width: 220 },
   { title: '查询类型', dataIndex: 'query_type', key: 'query_type', width: 180 },
   { title: '资产数量', dataIndex: 'statistic', key: 'statistic', width: 100 },
   { title: '状态', dataIndex: 'status', key: 'status', width: 100 },
@@ -248,8 +271,10 @@ const getStatusColor = (status) => {
 
 const searchForm = reactive({ name: '', target: '', status: '' });
 
-const fetchTasks = async (page = 1, size = 10) => {
-  loading.value = true;
+const fetchTasks = async (page = 1, size = 10, silent = false) => {
+  if (!silent) {
+    loading.value = true;
+  }
   try {
     const queryParams = { page, size };
     if (searchForm.name) queryParams.name = searchForm.name;
@@ -274,11 +299,19 @@ const fetchTasks = async (page = 1, size = 10) => {
   } catch (error) {
     console.error('API 请求失败:', error);
   } finally {
-    loading.value = false;
+    if (!silent) {
+      loading.value = false;
+    }
   }
 };
 
 const onSearch = () => fetchTasks(1, pagination.pageSize);
+const resetSearch = () => {
+  searchForm.name = '';
+  searchForm.target = '';
+  searchForm.status = '';
+  onSearch();
+};
 const handleTableChange = (page, pageSize) => fetchTasks(page, pageSize);
 
 onMounted(() => fetchTasks(pagination.current, pagination.pageSize));
@@ -322,7 +355,8 @@ const tycFormState = reactive({
   name: "",
   gid: "",
   depth: 0,
-  query_type: ['invest']
+  invest_ratio: 50,
+  query_type: ['invest', 'web', 'app', 'mapp', 'wechat', 'weibo']
 });
 
 const tycConfigCheck = reactive({
@@ -333,6 +367,10 @@ const tycConfigCheck = reactive({
 
 const showTycModal = async () => {
   tycVisible.value = true;
+  // 重置表单状态，确保每次打开时恢复默认配置
+  tycFormState.depth = 0;
+  tycFormState.query_type = ['invest', 'web', 'app', 'mapp', 'wechat', 'weibo'];
+  
   tycConfigCheck.loading = true;
   tycConfigCheck.valid = true;
   tycConfigCheck.message = '';
@@ -422,11 +460,37 @@ const handleExport = async (record) => {
   }
 };
 
+const handleBatchExport = async () => {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请先勾选需要导出的任务');
+    return;
+  }
+  try {
+    message.loading({ content: '正在批量导出...', key: 'batch_export', duration: 0 });
+    const res = await request.post('/icp/batch_export', {
+      task_id: selectedRowKeys.value
+    }, { responseType: 'blob' });
+
+    const blob = new Blob([res.data || res]);
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `batch_icp_export.xlsx`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    message.success({ content: '批量导出成功', key: 'batch_export', duration: 2 });
+  } catch (error) {
+    console.error('批量导出失败', error);
+    message.error({ content: '批量导出失败', key: 'batch_export', duration: 2 });
+  }
+};
+
 const handleSync = async (record) => {
   currentSyncTask.value = record;
   syncFormState.mode = 'existing';
   syncFormState.scope_id = undefined;
-  syncFormState.target_name = record.target || record.name;
+  syncFormState.target_name = record.name;
 
   try {
     const res = await request.get('/asset_scope/', { params: { size: 1000 } });
@@ -459,9 +523,22 @@ const submitSync = async () => {
     };
     const res = await request.post(`/icp/sync/${currentSyncTask.value._id}`, payload);
     if (res.code === 200) {
-      message.success({ content: res.message || '同步成功', key: 'syncIcp', duration: 2 });
+      const data = res.data || res;
+      const insertCount = data.insert_count || 0;
+      const duplicateCount = data.duplicate_count || 0;
+      const targetName = data.target_name || payload.target_name;
+      const resMode = data.mode || payload.mode;
+      
+      let successMsg = res.message || '同步成功';
+      if (resMode === 'existing') {
+        successMsg = `同步成功，同步域名 ${insertCount} 条、重复 ${duplicateCount} 条`;
+      } else {
+        successMsg = `新建 ${targetName} 成功，同步域名 ${insertCount} 条`;
+      }
+      
+      message.success({ content: successMsg, key: 'syncIcp', duration: 3 });
       syncModalVisible.value = false;
-      router.push('/group');
+      // Removed redirection to group page
     } else {
       message.error({ content: res.message || '同步失败', key: 'syncIcp', duration: 2 });
     }
@@ -536,4 +613,8 @@ const handleDelete = async (record) => {
     console.error('删除任务失败', error);
   }
 };
+
+onActivated(() => {
+  fetchTasks(pagination.current, pagination.pageSize, true);
+});
 </script>

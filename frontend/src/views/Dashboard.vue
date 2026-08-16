@@ -79,7 +79,7 @@
             <div class="stat-info" style="width: 100%;">
               <div class="stat-label">GitHub 监控动态 (今日)</div>
               <div class="stat-split-values" style="margin-top: 4px;">
-                <div class="stat-split-item" @click.stop="router.push('/GitHubTasks/GitHubTasksList')">
+                <div class="stat-split-item" @click.stop="router.push('/GitHubTasks/GitHubTasksList?tab=scheduler')">
                   <div class="val" style="color: #f5222d">{{ sysInfo.github_today?.leaks || 0 }}</div>
                   <div class="sub-label">新增泄露</div>
                 </div>
@@ -178,7 +178,7 @@
 
       <!-- 右侧：最新动态 (Log 展示) -->
       <a-col :span="8">
-        <a-card title="最新系统动态 (Log)" style="height: 100%;">
+        <a-card title="最新系统动态 (Log)" style="height: 100%;" :bodyStyle="{ maxHeight: '400px', overflowY: 'auto' }">
           <a-timeline>
             <a-timeline-item 
               v-for="(log, index) in logs" 
@@ -343,26 +343,31 @@ const fetchTrendAndRender = async () => {
     if (res.code === 200 && myChart) {
       const { days, assets, vulns, leaks, cves } = res.data;
       
+      const themeColor = getComputedStyle(document.documentElement).getPropertyValue('--arl-theme-color').trim() || '#1890ff';
+      const isDark = isDarkMode.value;
+
       const option = {
         tooltip: {
           trigger: 'axis',
           axisPointer: { 
-            type: 'cross',
-            crossStyle: { color: isDarkMode.value ? '#888' : '#999' }
+            type: 'line',
+            lineStyle: { color: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)', width: 1 }
           },
-          backgroundColor: isDarkMode.value ? '#1f1f1f' : '#ffffff',
-          borderColor: isDarkMode.value ? '#333' : '#eee',
-          textStyle: { color: isDarkMode.value ? '#eee' : '#333' }
+          backgroundColor: isDark ? 'rgba(17, 17, 17, 0.75)' : 'rgba(255, 255, 255, 0.85)',
+          borderColor: isDark ? '#333333' : '#e2e8f0',
+          textStyle: { color: isDark ? 'rgba(255, 255, 255, 0.85)' : '#333333' },
+          extraCssText: 'backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.2);',
+          padding: 12
         },
         legend: {
           data: ['新增站点', '漏洞', '代码泄露', 'CVE'],
           top: 0,
-          textStyle: { color: isDarkMode.value ? '#eee' : '#333' }
+          textStyle: { color: isDark ? 'rgba(255, 255, 255, 0.65)' : '#666', fontWeight: 500 }
         },
         grid: {
-          left: '3%',
-          right: '4%',
-          bottom: '3%',
+          left: '2%',
+          right: '2%',
+          bottom: '2%',
           top: '15%',
           containLabel: true
         },
@@ -370,25 +375,29 @@ const fetchTrendAndRender = async () => {
           {
             type: 'category',
             data: days,
-            axisPointer: { type: 'shadow' },
-            axisLine: { lineStyle: { color: 'var(--arl-border-color)' } },
-            axisLabel: { color: isDarkMode.value ? '#aaa' : '#666' }
+            axisLine: { show: false },
+            axisTick: { show: false },
+            axisLabel: { color: isDark ? 'rgba(255, 255, 255, 0.45)' : '#999', margin: 16 }
           }
         ],
         yAxis: [
           {
             type: 'value',
             name: '站点数量',
-            nameTextStyle: { color: isDarkMode.value ? '#aaa' : '#666', padding: [0, 0, 0, 20] },
-            axisLabel: { color: isDarkMode.value ? '#aaa' : '#666' },
-            splitLine: { lineStyle: { type: 'dashed', color: 'var(--arl-border-color)' } }
+            nameTextStyle: { color: isDark ? 'rgba(255, 255, 255, 0.45)' : '#999', padding: [0, 0, 0, 20] },
+            axisLabel: { color: isDark ? 'rgba(255, 255, 255, 0.45)' : '#999' },
+            splitLine: { show: false },
+            axisLine: { show: false },
+            axisTick: { show: false }
           },
           {
             type: 'value',
             name: '风险/事件数量',
-            nameTextStyle: { color: isDarkMode.value ? '#aaa' : '#666', padding: [0, 20, 0, 0] },
-            axisLabel: { color: isDarkMode.value ? '#aaa' : '#666' },
-            splitLine: { show: false } 
+            nameTextStyle: { color: isDark ? 'rgba(255, 255, 255, 0.45)' : '#999', padding: [0, 20, 0, 0] },
+            axisLabel: { color: isDark ? 'rgba(255, 255, 255, 0.45)' : '#999' },
+            splitLine: { show: false },
+            axisLine: { show: false },
+            axisTick: { show: false }
           }
         ],
         series: [
@@ -396,14 +405,14 @@ const fetchTrendAndRender = async () => {
             name: '新增站点',
             type: 'line',
             smooth: true,
-            symbolSize: 8,
+            symbol: 'none',
             data: assets,
-            itemStyle: { color: '#1890ff' },
-            lineStyle: { width: 3, shadowColor: 'rgba(24,144,255,0.3)', shadowBlur: 20, shadowOffsetY: 0 },
+            itemStyle: { color: themeColor },
+            lineStyle: { width: 3, color: themeColor },
             areaStyle: {
               color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { offset: 0, color: 'rgba(24,144,255,0.4)' },
-                { offset: 1, color: 'rgba(24,144,255,0.05)' }
+                { offset: 0, color: themeColor.replace('rgb', 'rgba').replace(')', ', 0.3)') || 'rgba(24,144,255,0.3)' },
+                { offset: 1, color: themeColor.replace('rgb', 'rgba').replace(')', ', 0.0)') || 'rgba(24,144,255,0)' }
               ])
             }
           },
@@ -411,12 +420,9 @@ const fetchTrendAndRender = async () => {
             name: '漏洞',
             type: 'bar',
             yAxisIndex: 1,
-            barMaxWidth: 20,
+            barMaxWidth: 8,
             itemStyle: { 
-              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { offset: 0, color: '#ff4d4f' },
-                { offset: 1, color: '#cf1322' }
-              ]),
+              color: isDark ? '#444444' : '#d9d9d9',
               borderRadius: [4, 4, 0, 0] 
             },
             data: vulns
@@ -426,20 +432,20 @@ const fetchTrendAndRender = async () => {
             type: 'line',
             yAxisIndex: 1,
             smooth: true,
-            symbolSize: 6,
+            symbol: 'none',
             data: leaks || [],
-            itemStyle: { color: '#9c27b0' },
-            lineStyle: { width: 2, shadowColor: 'rgba(156,39,176,0.3)', shadowBlur: 10, shadowOffsetY: 0 }
+            itemStyle: { color: isDark ? '#888888' : '#8c8c8c' },
+            lineStyle: { width: 2, type: 'dashed' }
           },
           {
             name: 'CVE',
             type: 'line',
             yAxisIndex: 1,
             smooth: true,
-            symbolSize: 6,
+            symbol: 'none',
             data: cves || [],
-            itemStyle: { color: '#faad14' },
-            lineStyle: { type: 'dashed', width: 2, shadowColor: 'rgba(250,173,20,0.3)', shadowBlur: 10, shadowOffsetY: 0 }
+            itemStyle: { color: isDark ? '#cccccc' : '#595959' },
+            lineStyle: { width: 2 }
           }
         ]
       };

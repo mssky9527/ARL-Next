@@ -16,7 +16,7 @@ if sys.stderr.encoding != 'utf-8':
 from mlog import logger
 from load_config import config
 from ymicp import beian
-from utils import get_resource_path, is_valid_url
+from utils import is_valid_url
 from task_manager import TaskManager, setup_signal_handlers
 from proxy_pool import init_proxy_pool_task, cleanup_proxy_pool_task
 from ipv6_pool import init_ipv6_pool, cleanup_ipv6_pool

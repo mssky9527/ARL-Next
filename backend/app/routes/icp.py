@@ -2,7 +2,6 @@ from flask_restx import Namespace, fields
 from app.utils import get_logger, auth, build_ret, curr_date, conn_db
 from app.modules import TaskStatus, ErrorMsg
 from . import ARLResource, get_arl_parser, base_query_fields
-from app import celerytask
 import bson
 
 ns = Namespace('icp', description="ICP 备案查询")
@@ -11,7 +10,7 @@ logger = get_logger()
 # 基础搜索字段
 base_search_icp_task_fields = {
     'name': fields.String(required=False, description="任务名"),
-    'target': fields.String(description="公司名称"),
+    'target': fields.String(description="查询目标"),
     'status': fields.String(description="任务状态"),
     'query_type': fields.String(description="查询类型"),
     '_id': fields.String(description="任务ID")
@@ -22,15 +21,16 @@ search_icp_task_fields = ns.model('SearchIcpTask', base_search_icp_task_fields)
 # 新建任务参数
 add_icp_task_fields = ns.model('AddIcpTask', {
     'name': fields.String(required=True, example="腾讯备案查询", description="任务名"),
-    'target': fields.String(required=True, example="深圳市腾讯计算机系统有限公司", description="目标公司"),
+    'target': fields.String(required=True, example="深圳市腾讯计算机系统有限公司", description="查询目标"),
     'query_type': fields.List(fields.String, required=True, example=["web", "app"], description="查询类型列表(web/app/mapp/kapp)")
 })
 
 add_tyc_task_fields = ns.model('AddTycTask', {
-    'name': fields.String(required=True, example="腾讯企业查询", description="任务名"),
-    'gid': fields.String(required=True, example="25174642", description="公司 ID(TYC)"),
-    'depth': fields.Integer(required=False, default=1, description="递归查询层数"),
-    'query_type': fields.List(fields.String, required=True, example=["invest", "trademark", "web", "app", "mapp", "wechat", "weibo"], description="查询类型列表")
+    'name': fields.String(required=True, description="任务名称"),
+    'gid': fields.String(required=True, description="公司/节点GID"),
+    'depth': fields.Integer(required=False, default=0, description="递归查询层数"),
+    'invest_ratio': fields.Float(required=False, default=50, description="对外投资最小比例(%)"),
+    'query_type': fields.List(fields.String, required=True, description="查询类型(web/app/mapp/wechat/weibo/invest/trademark)")
 })
 
 @ns.route('/task')
@@ -123,6 +123,7 @@ class TycTask(ARLResource):
         name = args.get('name')
         gid = args.get('gid')
         depth = args.get('depth', 1)
+        invest_ratio = args.get('invest_ratio', 0)
         query_type = args.get('query_type')
 
         # 校验天眼查配置是否有效
@@ -141,6 +142,7 @@ class TycTask(ARLResource):
             "target": f"TYC_{gid}",
             "gid": gid,
             "depth": depth,
+            "invest_ratio": invest_ratio,
             "query_type": query_type,
             "task_type": "tyc",  # 用于前端区分
             "status": TaskStatus.WAITING,
@@ -159,6 +161,7 @@ class TycTask(ARLResource):
             "task_id": task_id,
             "gid": gid,
             "depth": depth,
+            "invest_ratio": invest_ratio,
             "query_type": query_type
         }
 
@@ -202,12 +205,14 @@ base_search_icp_asset_fields = {
     'status': fields.String(description="TYC商标状态"),
     'recommend': fields.String(description="TYC公众号简介"),
     'href': fields.String(description="TYC微博链接"),
-    'regCapital_num': fields.Float(description="TYC注册资本数字(等于)"),
-    'regCapital_num__ngt': fields.Float(description="TYC注册资本数字(大于)"),
-    'regCapital_num__nlt': fields.Float(description="TYC注册资本数字(小于)"),
+    'amount_num': fields.Float(description="TYC注册资本数字(等于)"),
+    'amount_num__ngt': fields.Float(description="TYC注册资本数字(大于)"),
+    'amount_num__nlt': fields.Float(description="TYC注册资本数字(小于)"),
     'percent_num': fields.Float(description="TYC投资比例数字(等于)"),
     'percent_num__ngt': fields.Float(description="TYC投资比例数字(大于)"),
     'percent_num__nlt': fields.Float(description="TYC投资比例数字(小于)"),
+    'amount': fields.String(description="TYC注册资本(模糊搜索)"),
+    'percent': fields.String(description="TYC投资比例(模糊搜索)"),
     'query_type': fields.String(description="查询类型"),
     '_id': fields.String(description="资产ID")
 }
@@ -238,6 +243,14 @@ class IcpTaskStop(ARLResource):
             query = {"_id": bson.ObjectId(task_id)}
             update = {"$set": {"status": TaskStatus.STOP, "end_time": curr_date()}}
             conn_db('icp_task').update_one(query, update)
+            
+            # 及时通知微服务终止正在执行或等待的协程任务释放锁
+            import requests
+            try:
+                requests.post("http://osint-service:16181/api/v1/recon/stop", json={"task_id": task_id}, timeout=5)
+            except Exception as e:
+                logger.error(f"Failed to stop osint-service task {task_id}: {e}")
+                
             return build_ret(ErrorMsg.Success, {"task_id": task_id})
         except Exception as e:
             return build_ret(ErrorMsg.Error, {"error": str(e)})
@@ -307,6 +320,7 @@ class IcpTaskRestart(ARLResource):
                     "task_id": new_task_id,
                     "gid": task.get("gid"),
                     "depth": task.get("depth", 1),
+                    "invest_ratio": task.get("invest_ratio", 0),
                     "query_type": task.get("query_type", ["web"])
                 }
                 options["type"] = "tyc"
@@ -344,8 +358,6 @@ class IcpTaskRestart(ARLResource):
 
 
 from flask import make_response
-import io
-import csv
 
 @ns.route('/export/<string:task_id>')
 class IcpTaskExport(ARLResource):
@@ -365,7 +377,7 @@ class IcpTaskExport(ARLResource):
                         ['unitName|companyName', 'natureName|companyType', 'mainLicence|liscense', 'domain|ym', 'serviceName|webName', 'serviceLicence', 'updateRecordTime|examineDate']),
                 'app': (['APP名称', '主办单位名称', '单位性质/分类', '主备案号/应用类型', 'APP备案号', '审核时间', '简介'],
                         ['name|serviceName', 'unitName', 'natureName|classes', 'mainLicence|type', 'serviceLicence', 'updateRecordTime|examineDate', 'brief']),
-                'invest': (['投资公司名称', '法定代表人', '注册资本', '投资比例(%)'], ['name', 'legalPersonName', 'regCapital', 'percent']),
+                'invest': (['投资公司名称', '法定代表人', '注册资本', '投资比例(%)'], ['name', 'legalPersonName', 'amount', 'percent']),
                 'trademark': (['商标名称', '注册号', '分类', '状态'], ['tmName', 'regNo', 'intCls', 'status']),
                 'wechat': (['公众号名称', '微信号', '简介'], ['title', 'publicNum', 'recommend']),
                 'weibo': (['微博名称', '微博链接'], ['name', 'href']),
@@ -418,6 +430,90 @@ class IcpTaskExport(ARLResource):
         except Exception as e:
             return build_ret(ErrorMsg.Error, {"error": str(e)})
 
+batch_export_fields = ns.model('IcpBatchExport', {
+    "task_id": fields.List(fields.String(description="任务 ID"), required=True)
+})
+
+@ns.route('/batch_export')
+class IcpTaskBatchExport(ARLResource):
+    @auth
+    @ns.expect(batch_export_fields)
+    def post(self):
+        """批量导出 ICP/TYC 资产 (多表单 Excel)"""
+        try:
+            import openpyxl
+            from io import BytesIO
+            
+            args = self.parse_args(batch_export_fields)
+            task_id_list = args.get("task_id", [])
+            
+            if not task_id_list:
+                return build_ret(ErrorMsg.Error, {"error": "未提供任务 ID 列表"})
+
+            assets = list(conn_db('icp_asset').find({"task_id": {"$in": task_id_list}}))
+            wb = openpyxl.Workbook()
+            wb.remove(wb.active) # 移除默认的 Sheet
+            
+            headers = {
+                'web': (['主办单位名称', '单位性质', '主备案号', '域名', '网站名称', '服务许可', '更新时间/审核日期'],
+                        ['unitName|companyName', 'natureName|companyType', 'mainLicence|liscense', 'domain|ym', 'serviceName|webName', 'serviceLicence', 'updateRecordTime|examineDate']),
+                'app': (['APP名称', '主办单位名称', '单位性质/分类', '主备案号/应用类型', 'APP备案号', '审核时间', '简介'],
+                        ['name|serviceName', 'unitName', 'natureName|classes', 'mainLicence|type', 'serviceLicence', 'updateRecordTime|examineDate', 'brief']),
+                'invest': (['投资公司名称', '法定代表人', '注册资本', '投资比例(%)'], ['name', 'legalPersonName', 'amount', 'percent']),
+                'trademark': (['商标名称', '注册号', '分类', '状态'], ['tmName', 'regNo', 'intCls', 'status']),
+                'wechat': (['公众号名称', '微信号', '简介'], ['title', 'publicNum', 'recommend']),
+                'weibo': (['微博名称', '微博链接'], ['name', 'href']),
+                'mapp': (['小程序名称/备案号', '审核日期/简介'], ['name|serviceName', 'examineDate|serviceFilingNumber']),
+                'kapp': (['快应用名称', '简介'], ['name', 'brief']),
+            }
+
+            grouped_assets = {}
+            for item in assets:
+                qt = item.get('query_type', 'unknown')
+                if qt not in grouped_assets:
+                    grouped_assets[qt] = []
+                # 兼容 mapp 的新老接口字段
+                if qt == 'mapp' and not item.get('name'):
+                    item['name'] = item.get('serviceName', '')
+                grouped_assets[qt].append(item)
+
+            for qt, items in grouped_assets.items():
+                if qt in headers:
+                    h_labels, h_keys = headers[qt]
+                else:
+                    h_labels = ['数据名称']
+                    h_keys = ['name']
+
+                ws = wb.create_sheet(title=qt)
+                ws.append(h_labels)
+                for item in items:
+                    row = []
+                    for k in h_keys:
+                        if '|' in k:
+                            k1, k2 = k.split('|')
+                            val = item.get(k1) if item.get(k1) else item.get(k2, '')
+                        else:
+                            val = item.get(k, '')
+                        row.append(str(val))
+                    ws.append(row)
+
+            if len(wb.sheetnames) == 0:
+                ws = wb.create_sheet(title='Empty')
+                ws.append(['无数据'])
+
+            output = BytesIO()
+            wb.save(output)
+            output.seek(0)
+
+            from flask import make_response
+            response = make_response(output.getvalue())
+            response.headers["Content-Disposition"] = f"attachment; filename=batch_export.xlsx"
+            response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            return response
+        except Exception as e:
+            return build_ret(ErrorMsg.Error, {"error": str(e)})
+
+
 
 @ns.route('/sync/<string:task_id>')
 class IcpTaskSync(ARLResource):
@@ -452,7 +548,15 @@ class IcpTaskSync(ARLResource):
                 if not scope:
                     return build_ret(ErrorMsg.Error, {"error": "指定的资产组不存在"})
                 old_array = scope.get("scope_array", [])
-                new_array = list(set(old_array) | domains)
+                
+                # Calculate duplicates and new additions
+                old_set = set(old_array)
+                duplicates = domains.intersection(old_set)
+                duplicate_count = len(duplicates)
+                new_additions = domains - old_set
+                insert_count = len(new_additions)
+                
+                new_array = list(old_set | domains)
                 old_domain_array = scope.get("domain_array")
                 if old_domain_array is None:
                     old_domain_array = old_array if scope.get("scope_type", "domain") == "domain" else []
@@ -469,13 +573,20 @@ class IcpTaskSync(ARLResource):
             else:
                 # 新建资产组
                 if not target_name:
-                    target_name = task.get('target', '未知公司')
+                    target_name = task.get('name', '未知任务')
 
                 # 检查是否同名，不再限制 scope_type
                 scope = conn_db('asset_scope').find_one({"name": target_name})
                 if scope:
                     old_array = scope.get("scope_array", [])
-                    new_array = list(set(old_array) | domains)
+                    
+                    old_set = set(old_array)
+                    duplicates = domains.intersection(old_set)
+                    duplicate_count = len(duplicates)
+                    new_additions = domains - old_set
+                    insert_count = len(new_additions)
+
+                    new_array = list(old_set | domains)
                     old_domain_array = scope.get("domain_array")
                     if old_domain_array is None:
                         old_domain_array = old_array if scope.get("scope_type", "domain") == "domain" else []
@@ -490,6 +601,9 @@ class IcpTaskSync(ARLResource):
                     )
                 else:
                     new_array = list(domains)
+                    insert_count = len(domains)
+                    duplicate_count = 0
+                    
                     scope_data = {
                         "name": target_name,
                         "scope_type": "mixed",
@@ -502,6 +616,12 @@ class IcpTaskSync(ARLResource):
                     }
                     conn_db('asset_scope').insert_one(scope_data)
 
-            return build_ret(ErrorMsg.Success, {"msg": f"成功同步了 {len(domains)} 个域名到资产分组 '{target_name}'"})
+            return build_ret(ErrorMsg.Success, {
+                "msg": f"成功同步了 {len(domains)} 个域名到资产分组 '{target_name}'",
+                "insert_count": insert_count,
+                "duplicate_count": duplicate_count,
+                "target_name": target_name,
+                "mode": mode
+            })
         except Exception as e:
             return build_ret(ErrorMsg.Error, {"error": str(e)})

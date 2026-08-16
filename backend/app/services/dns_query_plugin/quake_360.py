@@ -1,7 +1,4 @@
-import base64
 import json
-import time
-import re
 from app.services.dns_query import DNSQueryBase
 from app import utils
 

@@ -30,11 +30,41 @@ class AssetWihUpdateTask(CommonTask):
 
         if self.wih_results:
             self.run_wih_domain_update()
+            self.notify_push()
 
         # 插入统计信息
         self.insert_stat()
 
         logger.info("end AssetWihUpdateTask, task_id:{} results: {}".format(self.task_id, len(self.wih_results)))
+
+    def notify_push(self):
+        try:
+            scope_data = get_scope_by_scope_id(self.scope_id)
+            scope_name = scope_data.get("name", "未知分组") if scope_data else "未知分组"
+            html_title = f"[WIH监控-{scope_name}] 灯塔消息推送"
+            
+            # 构造 Markdown 报告
+            markdown_report = f"### 新发现 WIH 信息 {len(self.wih_results)} 条\n\n"
+            markdown_report += "| 站点 | 类型 | 内容 | 来源 |\n"
+            markdown_report += "| --- | --- | --- | --- |\n"
+            
+            # 限制最多推送 20 条，防止消息过长
+            for record in self.wih_results[:20]:
+                item = record.dump_json() if hasattr(record, 'dump_json') else record
+                site = item.get("site", "-")
+                record_type = item.get("record_type") or item.get("recordType", "-")
+                content = item.get("content", "-")
+                source = item.get("source", "-")
+                markdown_report += f"| {site} | {record_type} | {content} | {source} |\n"
+                
+            if len(self.wih_results) > 20:
+                markdown_report += f"\n*...等共 {len(self.wih_results)} 条记录，请登录控制台查看详细信息。*\n"
+
+            from app.utils.push import unified_push
+            unified_push("asset_site", html_title, markdown_report)
+        except Exception as e:
+            logger.error(f"WIH push notify error: {e}")
+
 
     def insert_stat(self):
         self.insert_finger_stat()
@@ -110,13 +140,13 @@ class AssetWihUpdateTask(CommonTask):
 
 # 资产WIH更新监控任务
 def asset_wih_update_task(task_id, scope_id, scheduler_id):
-    from app.scheduler import update_job_run
+    from app.scheduler import update_scheduler_run
 
     task = AssetWihUpdateTask(task_id=task_id, scope_id=scope_id)
     task.base_update_task.update_task_field("start_time", utils.curr_date())
 
     try:
-        update_job_run(job_id=scheduler_id)
+        update_scheduler_run(scheduler_id=scheduler_id)
         task.run()
         task.base_update_task.update_task_field("status", TaskStatus.DONE)
     except Exception as e:

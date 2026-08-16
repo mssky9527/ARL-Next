@@ -1,5 +1,5 @@
 from bson import ObjectId
-from flask_restx import Resource, reqparse, fields, Namespace
+from flask_restx import fields, Namespace
 from app.utils import get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser
 from app.modules import ErrorMsg
@@ -14,12 +14,16 @@ base_search_fields = {
     'port': fields.Integer(description="端口"),
     'cert.subject_dn': fields.String(description="主题名称"),
     'cert.issuer_dn': fields.String(description="签发者名称"),
-    'cert.serial_number ': fields.String(description="序列号"),
+    'cert.serial_number': fields.String(description="序列号"),
     'cert.validity.start': fields.String(description="开始时间"),
     'cert.validity.end': fields.String(description="结束时间"),
     'cert.fingerprint.sha256': fields.String(description="SHA-256"),
     'cert.fingerprint.sha1': fields.String(description="SHA-1"),
     'cert.fingerprint.md5': fields.String(description="MD5"),
+    "update_date__dgt": fields.String(description="更新时间大于"),
+    "update_date__dlt": fields.String(description="更新时间小于"),
+    "insert_time__dgt": fields.String(description="插入时间大于"),
+    "insert_time__dlt": fields.String(description="插入时间小于"),
     "scope_id": fields.String(description="资产范围ID")
 }
 

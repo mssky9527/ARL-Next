@@ -2,7 +2,6 @@ from bson import ObjectId
 from app import utils
 from app.services.commonTask import CommonTask, WebSiteFetch
 from app.modules import TaskStatus
-from app.helpers.message_notify import push_email, push_dingding
 from app.tasks.poc import RiskCruising
 from app.services import webhook
 logger = utils.get_logger()
@@ -90,6 +89,9 @@ class AssetSiteUpdateTask(CommonTask):
             markdown_report += domain2site_monitor.dingding_markdown
 
         if markdown_report:
+            # 防截断机制：限制最大字符数，避免推送失败
+            if len(markdown_report) > 8000:
+                markdown_report = markdown_report[:8000] + "\n\n> ⚠️ **预警：内容超出第三方推送长度限制，已被折叠，请登录控制台查看完整清单！**"
             from app.utils.push import unified_push
             unified_push("asset_site", html_title, markdown_report)
 
@@ -106,11 +108,11 @@ class AssetSiteUpdateTask(CommonTask):
 
 # 资产站点更新监控任务
 def asset_site_update_task(task_id, scope_id, scheduler_id):
-    from app.scheduler import update_job_run
+    from app.scheduler import update_scheduler_run
 
     task = AssetSiteUpdateTask(task_id=task_id, scope_id=scope_id)
     try:
-        update_job_run(job_id=scheduler_id)
+        update_scheduler_run(scheduler_id=scheduler_id)
         task.run()
     except Exception as e:
         logger.exception(e)
@@ -144,15 +146,29 @@ class AddAssetSiteTask(RiskCruising):
         self.targets = new_targets
 
     def work(self):
-        self.asset_site_deduplication()
-        self.pre_set_site()
+        with self.safe_phase("asset_site_deduplication", self):
+            self.asset_site_deduplication()
+        
+        with self.safe_phase("pre_set_site", self):
+            self.pre_set_site()
+            
         if self.user_target_site_set:
             web_site_fetch = WebSiteFetch(task_id=self.task_id,
                                           sites=list(self.user_target_site_set),
                                           options=self.options)
-            web_site_fetch.run()
+            with self.safe_phase("web_site_fetch", self):
+                web_site_fetch.run()
 
-        self.common_run()
+            if self.options.get("file_leak"):
+                with self.safe_phase("file_leak", self):
+                    web_site_fetch.run_func("file_leak", web_site_fetch.file_leak)
+
+            if self.options.get("nuclei_scan"):
+                with self.safe_phase("nuclei_scan", self):
+                    web_site_fetch.run_func("nuclei_scan", web_site_fetch.nuclei_scan)
+
+        with self.safe_phase("common_run", self):
+            self.common_run()
 
 
 # 添加资产站点任务

@@ -1,6 +1,6 @@
 import re
 from bson import ObjectId
-from flask_restx import Resource, Api, reqparse, fields, Namespace
+from flask_restx import fields, Namespace
 from app.utils import get_logger, auth
 from app import utils
 from . import base_query_fields, ARLResource, get_arl_parser
@@ -172,6 +172,16 @@ class DeleteARLAssetScope(ARLResource):
 
         scope_data["scope"] = ",".join(scope_data["scope_array"])
         utils.conn_db(self._table).find_one_and_replace(query, scope_data)
+        
+        # --- 新增：深度级联清理孤儿记录 (级联删除属于该资产的所有子资产) ---
+        # 清理由于将该主干目标踢出 Scope 而产生的废弃监控状态和指纹历史
+        utils.conn_db("asset_domain").delete_many({"scope_id": scope_id, "domain": scope})
+        utils.conn_db("asset_ip").delete_many({"scope_id": scope_id, "ip": scope})
+        
+        # 站点与WIH不仅通过 scope_id 关联，还需要过滤出归属于刚被删除的 scope (即基准 domain/ip) 的记录
+        # 我们这里采用以 domain/ip 作为精确匹配 (通常子系统收集资产时会保存关联的 base_domain/ip 到 domain 字段)
+        utils.conn_db("asset_site").delete_many({"scope_id": scope_id, "domain": scope})
+        utils.conn_db("asset_wih").delete_many({"scope_id": scope_id, "domain": scope})
 
         return utils.build_ret(ErrorMsg.Success, {"scope_id": scope_id, "scope":scope})
 

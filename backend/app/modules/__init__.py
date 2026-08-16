@@ -12,7 +12,6 @@ class ScanPortType:
     [枚举：端口扫描策略]
     仅作为类型的字面量定义，实际端口数据通过 get_scan_ports 动态读取。
     """
-    TEST = "test"
     TOP100 = "top100"
     TOP1000 = "top1000"
     ALL = "all"
@@ -25,50 +24,56 @@ def get_scan_ports(port_type):
     根据 port_type 读取 app/dicts/ 下对应的 port_xxx.txt 文件，并将其转为逗号分隔的字符串。
     如果没有找到对应字典，回退到兜底配置。
     """
-    basedir = os.path.dirname(os.path.dirname(__file__))
-    dicts_dir = os.path.join(basedir, 'dicts')
-    filename_map = {
-        ScanPortType.TEST: 'port_test.txt',
-        ScanPortType.TOP100: 'port_top100.txt',
-        ScanPortType.TOP1000: 'port_top1000.txt',
-        ScanPortType.ALL: 'port_all.txt',
-        ScanPortType.CUSTOM: 'port_custom.txt'
-    }
-    filename = filename_map.get(port_type)
+    from app.utils import get_safe_dict_path
     
-    # 默认兜底配置
+    if isinstance(port_type, str) and port_type.endswith('.txt'):
+        try:
+            path = get_safe_dict_path(port_type)
+        except Exception:
+            path = None
+        filename = None
+    else:
+        basedir = os.path.dirname(os.path.dirname(__file__))
+        dicts_dir = os.path.join(basedir, 'dicts')
+        filename_map = {
+            ScanPortType.TOP100: 'port_top100.txt',
+            ScanPortType.TOP1000: 'port_top1000.txt',
+            ScanPortType.ALL: 'port_all.txt',
+            ScanPortType.CUSTOM: 'port_custom.txt'
+        }
+        filename = filename_map.get(port_type)
+        if filename:
+            path = os.path.join(dicts_dir, filename)
+        else:
+            path = None
+
     default_ports = {
-        ScanPortType.TEST: "80,443",
         ScanPortType.TOP100: "80,443,8080",
         ScanPortType.TOP1000: "80,443,8080,8443",
         ScanPortType.ALL: "1-65535",
         ScanPortType.CUSTOM: "80,443"
     }
 
-    if not filename:
+    if not path or not os.path.exists(path):
         return default_ports.get(port_type, "80,443")
         
-    path = os.path.join(dicts_dir, filename)
-    if os.path.exists(path):
-        try:
-            ports = []
-            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                for line in f:
-                    p = line.strip()
-                    if p:
-                        ports.append(p)
-            if ports:
-                return ",".join(ports)
-        except Exception:
-            pass
+    try:
+        ports = []
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            for line in f:
+                p = line.strip()
+                if p:
+                    ports.append(p)
+        if ports:
+            return ",".join(ports)
+    except Exception:
+        pass
 
-    # 读取失败，返回兜底
     return default_ports.get(port_type, "80,443")
 
 
 class DomainDictType:
     """[枚举：字典类型] 域名爆破使用的字典规模"""
-    TEST = Config.DOMAIN_DICT_TEST
     BIG = Config.DOMAIN_DICT_2W
 
 
@@ -210,6 +215,8 @@ class CeleryAction:
     ASSET_SITE_UPDATE = "asset_site_update"     # 暗号：执行资产站点更新
     ADD_ASSET_SITE_TASK = "add_asset_site_task" # 暗号：执行资产站点添加
     ASSET_WIH_UPDATE = "asset_wih_update"       # 暗号：执行资产WIH更新
+    ONESHOT_DOMAIN_EXEC_TASK = "oneshot_domain_exec_task" # 暗号：一次性监控同步任务 (域名)
+    ONESHOT_IP_EXEC_TASK = "oneshot_ip_exec_task" # 暗号：一次性监控同步任务 (IP)
 
 
 error_map = {

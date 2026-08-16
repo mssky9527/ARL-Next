@@ -1,5 +1,7 @@
 <template>
   <div style="background-color: var(--arl-bg-layout); padding: 24px; min-height: calc(100vh - 64px);">
+    <div ref="actionBarRef" style="position: sticky; top: 0px; z-index: 10; background-color: var(--arl-bg-layout); margin: -24px -24px 16px -24px; padding: 24px 24px 16px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+
 
     <div class="search-row" style="margin-bottom: 16px;">
       <div class="search-item">
@@ -23,13 +25,16 @@
     </div>
 
     <div style="margin-bottom: 16px; display: flex; gap: 8px;">
+      <a-button @click="resetSearch">清 除</a-button>
       <a-button :disabled="!hasSelected" @click="handleBatchAction('delete')">批量删除</a-button>
       <a-button :disabled="!hasSelected" @click="handleBatchAction('stop')">批量停止</a-button>
       <a-button :disabled="!hasSelected" @click="handleBatchAction('recover')">批量恢复</a-button>
       <a-button :disabled="!hasSelected" @click="handleBatchAction('run')">批量下发</a-button>
     </div>
 
-    <a-table
+    
+    </div>
+<a-table :sticky="stickyConfig"
         :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: onSelectChange }"
         :loading="loading"
         :dataSource="dataSource"
@@ -75,18 +80,23 @@
 
     <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0;">
       <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(pagination.total / pagination.pageSize) || 1 }} 页 / {{ pagination.total }} 条数据</div>
-      <a-pagination v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" @showSizeChange="handleTableChange" />
+      <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" @showSizeChange="handleTableChange" />
     </div>
 
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, reactive, computed, createVNode } from 'vue';
+
+import { ref as _ref_for_sticky, ref, onMounted, reactive, computed, createVNode, watch } from 'vue';import { useSticky } from '../utils/useSticky';
+const actionBarRef = _ref_for_sticky(null);
+const { stickyConfig } = useSticky(actionBarRef);
+
 import request from '../utils/request';
 import { message, Modal } from 'ant-design-vue';
 import { SearchOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue';
 import { useRouter } from 'vue-router';
+import { useGlobalPageSize } from '../utils/useGlobalPageSize';
 
 
 const router = useRouter();
@@ -103,7 +113,12 @@ const goToAssetScope = (id) => {
 const loading = ref(false);
 const dataSource = ref([]);
 const searchForm = ref({});
-const pagination = reactive({ current: 1, pageSize: 10, total: 0 });
+const globalPageSize = useGlobalPageSize(10);
+const pagination = reactive({ current: 1, pageSize: globalPageSize.value, total: 0 });
+
+watch(() => pagination.pageSize, (newSize) => {
+  globalPageSize.value = newSize;
+});
 
 const selectedRowKeys = ref([]);
 const hasSelected = computed(() => selectedRowKeys.value.length > 0);
@@ -150,6 +165,12 @@ const fetchData = async () => {
   }
 };
 
+const resetSearch = () => {
+  searchForm.value = {};
+  pagination.current = 1;
+  onSearch();
+};
+
 const onSearch = () => { pagination.current = 1; fetchData(); };
 const handleTableChange = (page, pageSize) => { pagination.current = page; pagination.pageSize = pageSize; fetchData(); };
 
@@ -170,9 +191,9 @@ const executeAction = async (actionType, ids) => {
   try {
     let payload = {};
     if (actionType === 'delete') {
-      payload = { job_id: ids };
+      payload = { scheduler_id: ids };
     } else {
-      payload = { job_id: ids[0] };
+      payload = { scheduler_id: ids[0] };
     }
     const res = await request.post(url, payload);
     if (res.code === 200) {
@@ -224,9 +245,9 @@ const handleBatchAction = (action) => {
     cancelText: '取 消',
     onOk: async () => {
       try {
-        // 🚨 完美对齐抓包：使用 job_id 作为键名，传递数组
+        // 🚨 完美对齐抓包：使用 scheduler_id 作为键名，传递数组
         const res = await request.post(current.url, {
-          job_id: selectedRowKeys.value
+          scheduler_id: selectedRowKeys.value
         });
 
         if (res.code === 200) {

@@ -1,5 +1,4 @@
 import base64
-from collections import deque
 from app.utils import http_req, get_logger, gen_md5
 from app.config import Config
 from app.utils.time import parse_datetime

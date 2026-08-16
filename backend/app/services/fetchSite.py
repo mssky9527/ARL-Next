@@ -72,6 +72,12 @@ class FetchSite(BaseThread):
 
         # 核心：发起 HTTP 请求
         conn = utils.http_req(site, timeout=self.http_timeout)
+        try:
+            import simhash
+            body_simhash = str(simhash.Simhash(conn.text).value)
+        except Exception:
+            body_simhash = ""
+
         item = {
             "site": site[:200],
             "hostname": hostname,
@@ -81,6 +87,7 @@ class FetchSite(BaseThread):
             "headers": utils.get_headers(conn),
             "http_server": conn.headers.get("Server", ""),
             "body_length": len(conn.content),
+            "simhash": body_simhash,
             "finger": [],
             "favicon": fetch_favicon(site, html_content=conn.content)
         }
@@ -96,24 +103,44 @@ class FetchSite(BaseThread):
         else:
             item["ip"] = hostname
 
-        # 【第一性原理：重定向链跟踪】
-        # 如果是 200/403 等正常状态码，或者是重定向链的最后一次（max_redirect==1），就保存结果
-        if max_redirect == 5 or max_redirect == 1 \
-                or (conn.status_code != 301 and conn.status_code != 302):
-            self.site_info_list.append(item)
+        # 【第一性原理：重定向链跟踪与智能剪枝】
+        will_follow = False
+        url_302 = ""
+        is_valuable_redirect = False
 
-        # 遇到 301/302，我们需要跟进去看看到底跳转去了哪里
-        if conn.status_code == 301 or conn.status_code == 302:
+        if conn.status_code in [301, 302]:
             url_302 = urljoin(site, conn.headers.get("Location", ""))
             url_302 = normal_url(url_302)
 
-            # 防御性编程，防止目标服务器搞个超级长的 URL 把我们内存干爆
-            if len(url_302) > 260:
-                return
+            # 情报探测：剥离常见无害 Header，看是否留存高价值信息
+            common_headers = {"server", "date", "content-type", "content-length", "connection", "location", "keep-alive", "x-powered-by"}
+            extra_headers = [k for k in conn.headers if k.lower() not in common_headers]
+            
+            if "set-cookie" in [k.lower() for k in conn.headers] or len(extra_headers) > 0:
+                is_valuable_redirect = True
+                if "tag" not in item:
+                    item["tag"] = []
+                item["tag"].append("跳转情报")
 
-            # 如果跳转后的 URL 跟原 URL 不同，并且是在同域名同协议下，那就继续往下层钻
-            if url_302 != site and same_netloc_and_scheme(url_302, site):
-                self.work(url_302, max_redirect=max_redirect - 1)
+            # 若只是单纯补全斜杠的同域跳转，则视为毫无价值，强制静默
+            if url_302.rstrip('/') == site.rstrip('/'):
+                is_valuable_redirect = False
+
+            if len(url_302) <= 260 and url_302 != site:
+                if same_netloc_and_scheme(url_302, site):
+                    will_follow = True
+
+        # 入库判定：
+        # 1. 正常非跳转状态码
+        # 2. 已到底线最后一次重定向 (max_redirect == 1)
+        # 3. 初始探测节点 (max_redirect == 5) 且【不会再往下跟踪】或【虽跟踪但含有高价值情报】
+        if conn.status_code not in [301, 302] or \
+           max_redirect == 1 or \
+           (max_redirect == 5 and (not will_follow or is_valuable_redirect)):
+            self.site_info_list.append(item)
+
+        if will_follow:
+            self.work(url_302, max_redirect=max_redirect - 1)
 
     def run(self):
         t1 = time.time()

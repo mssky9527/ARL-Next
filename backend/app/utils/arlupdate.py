@@ -1,8 +1,6 @@
 import sys
-import os
 import threading
 from . import conn_db
-from app.config import Config
 
 
 def update_task_tag():
@@ -52,6 +50,9 @@ def create_index():
                 conn_db(table).create_index(index, background=True)
         else:
             conn_db(table).create_index(index_map[table], background=True)
+
+    # Scheduler 核心轮询复合索引
+    conn_db('scheduler').create_index([("status", 1), ("next_run_time", 1)], background=True)
 
     # 兜底：创建联合唯一索引，彻底解决极端并发下的重复写入问题
     unique_indexes = {
@@ -130,11 +131,12 @@ def arl_update():
     import time
     db = conn_db('system_config')
     
-    # 尝试初始化锁记录
-    try:
-        db.insert_one({"_id": "init_lock", "status": "pending", "locked_at": 0})
-    except Exception:
-        pass 
+    # 尝试初始化锁记录，使用 upsert 和 $setOnInsert 避免 DuplicateKeyError
+    db.update_one(
+        {"_id": "init_lock"},
+        {"$setOnInsert": {"status": "pending", "locked_at": 0}},
+        upsert=True
+    ) 
     
     # 检查并释放过期的死锁（超过60分钟未完成）
     stale_time = time.time() - 3600

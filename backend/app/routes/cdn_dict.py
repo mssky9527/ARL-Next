@@ -2,7 +2,7 @@ import os
 import json
 from flask_restx import Resource, Namespace, fields
 from app.utils import get_logger, auth
-from . import ARLResource, get_arl_parser
+from . import get_arl_parser
 from app.config import Config
 
 ns = Namespace('cdn_dict', description="CDN字典管理")

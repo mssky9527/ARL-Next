@@ -2,7 +2,6 @@ from .fingerprint import FingerPrint
 from app.utils import get_logger, conn_db, load_file, curr_date_obj
 import time
 import json
-import pymongo
 from pymongo.errors import BulkWriteError
 from app.config import Config
 
@@ -124,13 +123,12 @@ def finger_db_identify(variables: dict) -> [str]:
                 try:
                     for end_index, original_value in ac_tree.iter(variables[key]):
                         matched_literals[key].add(original_value)
-                except Exception as e:
+                except Exception:
                     pass
 
     for finger in finger_list:
         try:
             if finger_db_cache.has_ahocorasick and not finger.has_not_or_regex:
-                skip = False
                 has_any_literals = False
                 found_any_match = False
                 

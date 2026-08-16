@@ -1,0 +1,122 @@
+from functools import lru_cache
+from bson import ObjectId
+from app.utils.conn import conn_db
+
+@lru_cache(maxsize=1024)
+def _get_task_scope_id(task_id):
+    if not task_id: return None
+    try:
+        item = conn_db('task').find_one({"_id": ObjectId(task_id)})
+        if item and item.get("options", {}).get("scope_id"):
+            return item.get("options", {}).get("scope_id")
+    except Exception:
+        pass
+    return None
+
+def _get_baseline_query(category, item, scope_id):
+    if category == "wih":
+        return {"scope_id": scope_id, "site": item.get("site"), "fnv_hash": item.get("fnv_hash")}
+    elif category == "cert":
+        return {"scope_id": scope_id, "ip": item.get("ip"), "cert.fingerprint.sha256": item.get("cert", {}).get("fingerprint", {}).get("sha256")}
+    elif category == "service":
+        return {"scope_id": scope_id, "service_name": item.get("service_name")}
+    elif category == "fileleak":
+        return {"scope_id": scope_id, "url": item.get("url")}
+    elif category == "url":
+        return {"scope_id": scope_id, "url": item.get("url")}
+    elif category == "vuln":
+        return {"scope_id": scope_id, "target": item.get("target"), "vul_name": item.get("vul_name")}
+    elif category == "npoc_service":
+        return {"scope_id": scope_id, "host": item.get("host"), "port": item.get("port")}
+    elif category == "cip":
+        return {"scope_id": scope_id, "cidr_ip": item.get("cidr_ip")}
+    elif category == "nuclei_result":
+        return {"scope_id": scope_id, "target": item.get("target"), "template_id": item.get("template_id")}
+    elif category == "stat_finger":
+        return {"scope_id": scope_id, "name": item.get("name")}
+    elif category in ["site", "domain", "ip"]:
+        return {"scope_id": scope_id, category: item.get(category)}
+    return None
+
+def _compute_update_diff(old_item, new_item):
+    diff = {}
+    for k, v in new_item.items():
+        if k in ["task_id", "_id", "scope_id", "save_date", "update_date", "change_status", "update_diff"]: continue
+        old_v = old_item.get(k)
+        if old_v != v:
+            diff[k] = {"before": old_v, "after": v}
+    return diff
+
+def tag_monitor_diff(collection_name, item):
+    """
+    Hook to dynamically tag real-time monitor diffs before insertion.
+    """
+    if not item or not isinstance(item, dict): return
+    if collection_name.startswith("asset_"):
+        category = collection_name[6:]
+    else:
+        category = collection_name
+        
+    task_id = item.get("task_id")
+    # Only tag for newly scanned items belonging to a task (not sync operations)
+    if not task_id or "scope_id" in item:
+        return
+        
+    scope_id = _get_task_scope_id(task_id)
+    if not scope_id:
+        return
+        
+    query = _get_baseline_query(category, item, scope_id)
+    if not query:
+        return
+        
+    old_item = conn_db("asset_" + category).find_one(query)
+    if not old_item:
+        item["change_status"] = "new"
+    else:
+        diff = _compute_update_diff(old_item, item)
+        if diff:
+            item["change_status"] = "update"
+            item["update_diff"] = diff
+        else:
+            item["change_status"] = "unchanged"
+
+def log_monitor_diff_summary(task_id):
+    """
+    Summarize and write to the syslog table via logger.
+    """
+    if not task_id: return
+    scope_id = _get_task_scope_id(task_id)
+    if not scope_id:
+        return # Not a monitor task
+        
+    import app.utils
+    logger = app.utils.get_logger()
+    
+    categories = [
+        "site", "domain", "ip", "wih", "cert", "service", 
+        "fileleak", "url", "vuln", "npoc_service", "cip", 
+        "nuclei_result", "stat_finger"
+    ]
+    
+    summary = []
+    total_new = 0
+    total_update = 0
+    
+    for cat in categories:
+        new_cnt = conn_db(cat).count_documents({"task_id": task_id, "change_status": "new"})
+        upd_cnt = conn_db(cat).count_documents({"task_id": task_id, "change_status": "update"})
+        
+        if new_cnt > 0 or upd_cnt > 0:
+            total_new += new_cnt
+            total_update += upd_cnt
+            parts = []
+            if new_cnt > 0: parts.append(f"新增 {new_cnt} 个")
+            if upd_cnt > 0: parts.append(f"变动 {upd_cnt} 个")
+            summary.append(f"{cat}({', '.join(parts)})")
+            
+    if total_new == 0 and total_update == 0:
+        logger.info("[监控对比] 本次任务未发现任何资产变动或新增。")
+    else:
+        logger.info(f"[监控对比] 本次任务共发现新增资产 {total_new} 项，变动 {total_update} 项。详情：{'；'.join(summary)}。")
+

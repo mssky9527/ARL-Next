@@ -11,7 +11,9 @@
       
       <!-- ================= Tab 1: 扫描结果 ================= -->
       <a-tab-pane key="result" tab="扫描结果">
-        <div class="search-row" style="margin-bottom: 16px; background-color: var(--arl-bg-light); padding: 16px; border-radius: 4px;">
+
+        <div style="position: sticky; top: 0px; z-index: 10; background-color: var(--arl-bg-layout); margin: -24px -24px 16px -24px; padding: 24px 24px 16px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+        <div class="search-row" style="margin-bottom: 16px; ">
           <div class="search-item">
             <span class="label">路径名：</span>
             <a-input v-model:value="searchForm.path" placeholder="请输入路径名进行搜索" style="width: 200px;" allowClear @pressEnter="onSearch">
@@ -32,7 +34,9 @@
           </div>
         </div>
 
-        <a-table
+        
+        </div>
+<a-table :sticky="stickyConfig"
             :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: onSelectChange }"
             :loading="loading"
             :dataSource="dataSource"
@@ -74,7 +78,7 @@
 
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0;">
           <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(pagination.total / pagination.pageSize) || 1 }} 页 / {{ pagination.total }} 条数据</div>
-          <a-pagination v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" />
+          <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" />
         </div>
       </a-tab-pane>
 
@@ -99,11 +103,16 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch, nextTick, onUnmounted } from 'vue';
+
+import { ref as _ref_for_sticky, ref, reactive, onMounted, watch, nextTick, onUnmounted } from 'vue';import { useSticky } from '../utils/useSticky';
+const _fake_ref = _ref_for_sticky(null);
+const { stickyConfig } = useSticky(_fake_ref);
+
 import { useRoute, useRouter } from 'vue-router';
 import request from '../utils/request';
 import { message } from 'ant-design-vue';
 import { SearchOutlined, InboxOutlined, SyncOutlined, LeftOutlined } from '@ant-design/icons-vue';
+import { useGlobalPageSize } from '../utils/useGlobalPageSize';
 
 const route = useRoute();
 const router = useRouter();
@@ -121,7 +130,12 @@ const dataSource = ref([]);
 const taskId = route.query._id || '';
 
 const searchForm = reactive({ path: '', repo_full_name: '', human_content: '' });
-const pagination = reactive({ current: 1, pageSize: 10, total: 0 });
+const globalPageSize = useGlobalPageSize(10);
+const pagination = reactive({ current: 1, pageSize: globalPageSize.value, total: 0 });
+
+watch(() => pagination.pageSize, (newSize) => {
+  globalPageSize.value = newSize;
+});
 
 const selectedRowKeys = ref([]);
 const onSelectChange = (keys) => { selectedRowKeys.value = keys; };
@@ -183,7 +197,7 @@ const fetchLogData = async (isPolling = false) => {
   
   try {
     const params = {
-      size: 500,
+      size: 50000,
       task_id: taskId,
       order: 'create_time'
     };

@@ -49,7 +49,7 @@ class CheckHTTP(BaseThread):
             if out is not None:
                 self.checkout_map[url] = out
 
-        except requests.exceptions.RequestException as e:
+        except requests.exceptions.RequestException:
             pass
 
         except Exception as e:
@@ -60,7 +60,7 @@ class CheckHTTP(BaseThread):
         t1 = time.time()
         logger.info("start check http {}".format(len(self.targets)))
         self._run()
-        elapse = time.time() - t1
+        time.time() - t1
         return self.checkout_map
 
 

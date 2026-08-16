@@ -1,14 +1,12 @@
-from bson import ObjectId
 import os
 from flask import request
 from xing.conf import Conf as npoc_conf
-from flask_restx import Resource, Api, reqparse, fields, Namespace
+from flask_restx import fields, Namespace
 from app.utils import get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser
 from app.services.npoc import NPoC
-from app import utils, celerytask
-from app.modules import ErrorMsg, TaskStatus, CeleryAction
-import copy
+from app import utils
+from app.modules import ErrorMsg
 
 ns = Namespace('poc', description="PoC信息")
 
@@ -168,7 +166,7 @@ class ARLPoCImport(ARLResource):
 
         # 文件保存后，触发一次同步操作
         n = NPoC()
-        plugin_cnt_before = len(n.plugin_name_list)
+        len(n.plugin_name_list)
         
         try:
             n.sync_to_db()

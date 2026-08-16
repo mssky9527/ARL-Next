@@ -114,12 +114,34 @@ class SafeCollectionProxy:
 
     def __getattr__(self, name):
         attr = getattr(self._collection, name)
-        if callable(attr) and name in ('insert_one', 'insert_many', 'insert'):
+        if callable(attr) and name in ('insert_one', 'insert_many', 'insert', 'bulk_write'):
             def wrapper(*args, **kwargs):
                 try:
                     return attr(*args, **kwargs)
                 except pymongo.errors.DuplicateKeyError as e:
                     logging.getLogger('arlv2').warning(f"Ignored DuplicateKeyError on {self._collection.name}: {e}")
+                    class DummyResult:
+                        inserted_id = None
+                        inserted_ids = []
+                        acknowledged = False
+                    return DummyResult()
+                except pymongo.errors.BulkWriteError as e:
+                    details = getattr(e, 'details', {}) or {}
+                    write_errors = details.get('writeErrors', [])
+                    duplicate_codes = {11000, 11001, 12582}
+                    non_dup_errors = [err for err in write_errors if err.get('code') not in duplicate_codes]
+                    concern_errors = details.get('writeConcernErrors', [])
+
+                    if non_dup_errors or concern_errors:
+                        logging.getLogger('arlv2').error(
+                            f"BulkWriteError on {self._collection.name} with critical errors: "
+                            f"non_dup_errors={non_dup_errors}, concern_errors={concern_errors}"
+                        )
+                    else:
+                        logging.getLogger('arlv2').warning(
+                            f"Ignored DuplicateKey BulkWriteError on {self._collection.name} ({len(write_errors)} duplicates skipped)"
+                        )
+
                     class DummyResult:
                         inserted_id = None
                         inserted_ids = []

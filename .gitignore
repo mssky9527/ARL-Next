@@ -57,6 +57,15 @@ tmp.txt
 frontend/.htpasswd
 
 # MCP Server
-mcp-server/node_modules/
 mcp-server/.env
+mcp-server/.venv/
 Notify.txt
+
+hot_update.sh
+*.tar.gz
+
+question.md
+
+# Ruff cache
+.ruff_cache/
+ARL_auth.md

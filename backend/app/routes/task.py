@@ -1,12 +1,10 @@
-import re
-import bson
-from flask_restx import Resource, Api, reqparse, fields, Namespace
+from flask_restx import fields, Namespace
 from bson import ObjectId
 from app import celerytask
 from app.utils import get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser, conn
 from app import utils
-from app.modules import TaskStatus, ErrorMsg, TaskSyncStatus, CeleryAction, TaskTag, TaskType, AssetScopeType, CeleryRoutingKey
+from app.modules import TaskStatus, ErrorMsg, TaskSyncStatus, CeleryAction, TaskTag, CeleryRoutingKey
 from app.helpers import get_options_by_policy_id, submit_task_task,\
     submit_risk_cruising, get_scope_by_scope_id, check_target_in_scope
 from app.helpers.task import get_task_data, restart_task
@@ -51,6 +49,8 @@ base_search_task_fields = {
     'options.findvhost': fields.Boolean(description="是否开启Host碰撞检测"),
     'options.web_info_hunter': fields.Boolean(description="是否开启 webInfoHunter"),
     'options.npoc_service_detection': fields.Boolean(description="是否开启服务(python)识别"),
+    'options.alt_dns_dict': fields.String(description="智能子域爆破字典选择"),
+    'options.file_leak_dict': fields.String(description="文件泄露字典选择"),
 
     # 翻译官(build_db_query)”,这里的后缀就是给它看的！
     'statistic.site_cnt': fields.Integer(description="站点数量等于"),
@@ -105,6 +105,8 @@ add_task_fields = ns.model('AddTask', { # 创建添加任务命名空间。
     "findvhost": fields.Boolean(example=False, default=False),
     "web_info_hunter": fields.Boolean(example=False, default=False, description="WEB JS 中的信息收集"),
     "npoc_service_detection": fields.Boolean(example=False, default=False, description="服务(python)识别"),
+    "alt_dns_dict": fields.String(example="", description="智能子域爆破字典选择"),
+    "file_leak_dict": fields.String(example="", description="文件泄露字典选择"),
 })
 
 
@@ -350,7 +352,7 @@ class DeleteTask(ARLResource):
                     if os.path.exists(screenshot_path):
                         try:
                             shutil.rmtree(screenshot_path, ignore_errors=True)
-                        except Exception as e:
+                        except Exception:
                             pass
 
         return utils.build_ret(ErrorMsg.Success, {"task_id": task_id_list})

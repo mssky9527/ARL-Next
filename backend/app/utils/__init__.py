@@ -2,7 +2,7 @@ import subprocess
 import shlex
 import random
 import string
-import psutil
+import string
 import os
 import re
 import sys
@@ -44,8 +44,27 @@ from .cron import check_cron, check_cron_interval
 from .query_loader import load_query_plugins
 import re
 
+def get_safe_dict_path(filename):
+    from app.config import Config
+    import re
+    if not isinstance(filename, str) or not re.match(r'^[a-zA-Z0-9_-]+\.txt$', filename):
+        raise ValueError(f"不合法的字典文件名: {filename}")
+    
+    path = os.path.join(Config.basedir, 'dicts', filename)
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"字典文件不存在: {path}")
+    
+    return path
+
+def load_file_generator(path):
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            yield line
+
 def load_file(path):
-    with open(path, "r+", encoding="utf-8") as f:
+    if os.path.exists(path) and os.path.getsize(path) > 50 * 1024 * 1024:
+        raise Exception(f"字典超过 50MB ({path})，为防止系统 OOM，禁止通过全量模式加载。")
+    with open(path, "r+", encoding="utf-8", errors="ignore") as f:
         return f.readlines()
 
 
@@ -246,10 +265,14 @@ def build_ret(error, data):
 
 def kill_child_process(pid):
     logger = get_logger()
-    parent = psutil.Process(pid)
-    for child in parent.children(recursive=True):
-        logger.info("kill child_process {}".format(child))
-        child.kill()
+    try:
+        import psutil
+        parent = psutil.Process(pid)
+        for child in parent.children(recursive=True):
+            logger.info("kill child_process {}".format(child))
+            child.kill()
+    except ImportError:
+        logger.warning("psutil module is missing, cannot kill child processes.")
 
 
 def exit_gracefully(signum, frame):
@@ -257,9 +280,14 @@ def exit_gracefully(signum, frame):
     logger.info('Receive signal {} frame {}'.format(signum, frame))
     pid = os.getpid()
     kill_child_process(pid)
-    parent = psutil.Process(pid)
-    logger.info("kill self {}".format(parent))
-    parent.kill()
+    try:
+        import psutil
+        parent = psutil.Process(pid)
+        logger.info("kill self {}".format(parent))
+        parent.kill()
+    except ImportError:
+        logger.warning("psutil missing, fallback to sys.exit")
+        sys.exit(0)
 
 
 def truncate_string(s):
@@ -354,6 +382,12 @@ def safe_insert_asset(collection, unique_keys, item):
                 if curr is not None:
                     query[k] = curr
                     
+    from app.utils.monitor_diff import tag_monitor_diff
+    tag_monitor_diff(collection, item)
+                    
+    if item.get("change_status") == "unchanged":
+        return
+        
     # 如果没凑齐 unique_keys，就直接退化成 insert_one（这种情况应该属于脏数据或特殊表）
     if not query or len(query) != len(unique_keys):
         conn_db(collection).insert_one(item)
@@ -369,6 +403,14 @@ def safe_insert_asset_many(collection, unique_keys, items):
     :param unique_keys: 唯一键列表
     :param items: 要插入的数据字典列表
     """
+    if not items:
+        return
+        
+    from app.utils.monitor_diff import tag_monitor_diff
+    for item in items:
+        tag_monitor_diff(collection, item)
+    
+    items = [item for item in items if item.get("change_status") != "unchanged"]
     if not items:
         return
     

@@ -92,7 +92,8 @@ class RiskCruising(CommonTask):
             self.npoc_service_target_set.add(item["target"])
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
-            utils.conn_db('npoc_service').insert_one(item)
+        if result:
+            utils.safe_insert_asset_many('npoc_service', ['task_id', 'target'], result)
 
     def run_poc(self):
         """运行poc，获取进度"""
@@ -105,16 +106,22 @@ class RiskCruising(CommonTask):
         run_thread.start()
         while run_thread.is_alive():
             time.sleep(5)
-            status = "poc {}/{}".format(npoc_instance.runner.runner_cnt, run_total)
-            logger.info("[{}]runner cnt {}/{}".format(self.task_id,
-                                                      npoc_instance.runner.runner_cnt, run_total))
-            self.update_task_field("status", status)
+            if npoc_instance.runner is not None:
+                status = "poc {}/{}".format(npoc_instance.runner.runner_cnt, run_total)
+                logger.info("[{}]runner cnt {}/{}".format(self.task_id,
+                                                          npoc_instance.runner.runner_cnt, run_total))
+                self.update_task_field("status", status)
 
         result = npoc_instance.result
-        for item in result:
-            item["task_id"] = self.task_id
-            item["save_date"] = utils.curr_date()
-            utils.conn_db('vuln').insert_one(item)
+        if result:
+            for item in result:
+                item["task_id"] = self.task_id
+                item["save_date"] = utils.curr_date()
+                if "plg_name" in item:
+                    item["plugin_name"] = item.get("plg_name")
+                if "target" in item:
+                    item["vuln_url"] = item.get("target")
+            utils.safe_insert_asset_many('vuln', ['task_id', 'target', 'plugin_name'], result)
 
     def run_brute(self):
         """运行爆破，获取进度"""
@@ -128,21 +135,32 @@ class RiskCruising(CommonTask):
         run_thread.start()
         while run_thread.is_alive():
             time.sleep(5)
-            status = "brute {}/{}".format(npoc_instance.runner.runner_cnt, run_total)
-            logger.info("[{}]runner cnt {}/{}".format(self.task_id,
-                                                      npoc_instance.runner.runner_cnt, run_total))
-            self.update_task_field("status", status)
+            if npoc_instance.runner is not None:
+                status = "brute {}/{}".format(npoc_instance.runner.runner_cnt, run_total)
+                logger.info("[{}]runner cnt {}/{}".format(self.task_id,
+                                                          npoc_instance.runner.runner_cnt, run_total))
+                self.update_task_field("status", status)
 
         result = npoc_instance.result
-        for item in result:
-            item["task_id"] = self.task_id
-            item["save_date"] = utils.curr_date()
-            utils.conn_db('vuln').insert_one(item)
+        if result:
+            for item in result:
+                item["task_id"] = self.task_id
+                item["save_date"] = utils.curr_date()
+                if "plg_name" in item:
+                    item["plugin_name"] = item.get("plg_name")
+                if "target" in item:
+                    item["vuln_url"] = item.get("target")
+            utils.safe_insert_asset_many('vuln', ['task_id', 'target', 'plugin_name'], result)
 
     def update_services(self, status, elapsed):
-        elapsed = "{:.2f}".format(elapsed)
+        try:
+            elapsed_val = float(elapsed)
+        except (ValueError, TypeError):
+            logger.error(f"update_services elapsed format error: {elapsed}")
+            elapsed_val = 0.0
+        elapsed_str = "{:.2f}".format(elapsed_val)
         self.update_task_field("status", status)
-        update = {"$push": {"service": {"name": status, "elapsed": float(elapsed)}}}
+        update = {"$push": {"service": {"name": status, "elapsed": float(elapsed_str)}}}
         utils.conn_db('task').update_one(self.query, update)
 
     def update_task_field(self, field=None, value=None):
@@ -163,37 +181,43 @@ class RiskCruising(CommonTask):
 
     def work(self):
         # 对目标进行预先处理
-        self.set_relay_targets()
-        self.pre_set_site()
+        with self.safe_phase("pre_process", self):
+            self.set_relay_targets()
+            self.pre_set_site()
 
         web_site_fetch = WebSiteFetch(task_id=self.task_id,
                                       sites=list(self.user_target_site_set), options=self.options)
-        web_site_fetch.run()
-        self.available_sites = web_site_fetch.available_sites
+        
+        with self.safe_phase("web_site_fetch", self):
+            web_site_fetch.run()
+            self.available_sites = web_site_fetch.available_sites
 
-        self.init_plugin_name()
+        with self.safe_phase("init_plugin_name", self):
+            self.init_plugin_name()
+            
         if self.options.get("npoc_service_detection"):
-            self.update_task_field("status", "npoc_service_detection")
-            t1 = time.time()
-            self.npoc_service_detection()
-            elapse = time.time() - t1
-            self.update_services("npoc_service_detection", elapse)
+            with self.safe_phase("npoc_service_detection", self):
+                self.npoc_service_detection()
+
+        if self.options.get("file_leak"):
+            with self.safe_phase("file_leak", self):
+                web_site_fetch.run_func("file_leak", web_site_fetch.file_leak)
 
         if self.brute_plugin_name:
-            self.update_task_field("status", "weak_brute")
-            t1 = time.time()
-            self.run_brute()
-            elapse = time.time() - t1
-            self.update_services("weak_brute", elapse)
+            with self.safe_phase("weak_brute", self):
+                self.run_brute()
 
         if self.poc_plugin_name:
-            self.update_task_field("status", "PoC")
-            t1 = time.time()
-            self.run_poc()
-            elapse = time.time() - t1
-            self.update_services("PoC", elapse)
+            with self.safe_phase("PoC", self):
+                self.run_poc()
 
-        self.common_run()
+        with self.safe_phase("common_run", self):
+            self.common_run()
+
+        # nuclei_scan 放在最后执行，防止高并发扫描把目标打挂或者触发IP封禁
+        if self.options.get("nuclei_scan"):
+            with self.safe_phase("nuclei_scan", self):
+                web_site_fetch.run_func("nuclei_scan", web_site_fetch.nuclei_scan)
 
     def run(self):
         try:

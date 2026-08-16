@@ -146,6 +146,21 @@ class DashboardSysInfo(ARLResource):
         running_tasks += conn('icp_task').count({"status": {"$nin": non_running_statuses}})
         waiting_tasks += conn('icp_task').count({"status": TaskStatus.WAITING})
         
+        # 3. RabbitMQ Real Queue Depth
+        # [防盲区机制] 弥补部分任务(如一次性扫描)在排队期间未写入 MongoDB 的设计缺陷，直接拉取底层真实积压量
+        try:
+            from app.celerytask import celery
+            from app.modules import CeleryRoutingKey
+            with celery.connection_or_acquire() as broker_conn:
+                for q in [CeleryRoutingKey.ASSET_TASK, CeleryRoutingKey.ASSET_TASK_HEAVY, CeleryRoutingKey.ASSET_TASK_LIGHT, CeleryRoutingKey.GITHUB_TASK]:
+                    try:
+                        _, message_count, _ = broker_conn.default_channel.queue_declare(queue=q, passive=True)
+                        waiting_tasks += (message_count or 0)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.error(f"Failed to fetch RabbitMQ queue depth: {e}")
+        
         # GitHub Business Metrics (Today's Leaks & Intel)
         today_start_dt = datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
         today_start_oid = ObjectId.from_datetime(today_start_dt)

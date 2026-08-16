@@ -5,7 +5,6 @@ import requests.exceptions
 import contextvars
 from lxml import etree
 from app import utils
-from app.modules import DomainInfo
 logger = utils.get_logger()
 
 
@@ -21,10 +20,10 @@ class BaseThread(object):
     def _work(self, url):
         try:
             self.work(url)
-        except requests.exceptions.RequestException as e:
+        except requests.exceptions.RequestException:
             pass
 
-        except etree.Error as e:
+        except etree.Error:
             pass
 
         except Exception as e:

@@ -1,5 +1,7 @@
 <template>
   <div style="background-color: var(--arl-bg-layout); padding: 24px; min-height: calc(100vh - 64px);">
+    <div ref="actionBarRef" style="position: sticky; top: 0px; z-index: 10; background-color: var(--arl-bg-layout); margin: -24px -24px 16px -24px; padding: 24px 24px 16px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+
 
     <div style="display: flex; align-items: center; margin-bottom: 20px; gap: 16px;">
       <a-button type="primary" @click="openCreateModal">新建 PoC</a-button>
@@ -9,7 +11,7 @@
       <a-button type="primary" :loading="syncLoading" @click="handleSync">更新</a-button>
     </div>
 
-    <div class="search-row" style="margin-bottom: 16px; background-color: var(--arl-bg-light); padding: 16px; border-radius: 4px;">
+    <div class="search-row" style="margin-bottom: 16px; ">
       <div class="search-item">
         <span class="label">漏洞名称：</span>
         <a-input v-model:value="searchForm.vul_name" placeholder="请输入漏洞名称进行搜索" style="width: 200px;" allowClear @pressEnter="onSearch">
@@ -49,7 +51,9 @@
       </a-popconfirm>
     </div>
 
-    <a-table
+    
+    </div>
+<a-table :sticky="stickyConfig"
         :loading="loading"
         :dataSource="dataSource"
         :columns="columns"
@@ -79,7 +83,7 @@
 
     <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0;">
       <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(pagination.total / pagination.pageSize) || 1 }} 页 / {{ pagination.total }} 条数据</div>
-      <a-pagination v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" />
+      <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" />
     </div>
 
     <!-- 导入 PoC 弹窗 -->
@@ -166,13 +170,18 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+
+import { ref as _ref_for_sticky, ref, reactive, onMounted, watch } from 'vue';import { useSticky } from '../utils/useSticky';
+const actionBarRef = _ref_for_sticky(null);
+const { stickyConfig } = useSticky(actionBarRef);
+
 import { Codemirror } from 'vue-codemirror';
 import { python } from '@codemirror/lang-python';
 import { oneDark } from '@codemirror/theme-one-dark';
 import request from '../utils/request';
 import { message } from 'ant-design-vue';
 import { SearchOutlined, InboxOutlined } from '@ant-design/icons-vue';
+import { useGlobalPageSize } from '../utils/useGlobalPageSize';
 
 const editExtensions = [python(), oneDark];
 
@@ -465,7 +474,12 @@ class Plugin(BasePlugin):
 };
 
 const searchForm = reactive({ vul_name: '', app_name: '', category: '', scheme: '' });
-const pagination = reactive({ current: 1, pageSize: 10, total: 0 });
+const globalPageSize = useGlobalPageSize(10);
+const pagination = reactive({ current: 1, pageSize: globalPageSize.value, total: 0 });
+
+watch(() => pagination.pageSize, (newSize) => {
+  globalPageSize.value = newSize;
+});
 
 const columns = [
   { title: '序号', key: 'index', width: 80, align: 'center' },

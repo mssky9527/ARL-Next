@@ -1,7 +1,7 @@
 import os
 from flask_restx import Resource, Namespace, fields
 from app.utils import get_logger, auth
-from . import ARLResource, get_arl_parser
+from . import get_arl_parser
 from app.config import Config
 
 ns = Namespace('dictionary', description="字典管理")
@@ -34,12 +34,25 @@ append_fields = {
 }
 append_parser = get_arl_parser(append_fields, location='json')
 
+# /create 请求参数 (JSON body)
+create_fields = {
+    'name': fields.String(required=True, description="字典文件名"),
+    'content': fields.String(required=False, description="初始条目内容（可选）")
+}
+create_parser = get_arl_parser(create_fields, location='json')
+
 # /delete 请求参数 (JSON body)
 delete_fields = {
     'name': fields.String(required=True, description="字典文件名"),
     'content': fields.String(required=True, description="要删除的条目，多行以换行符分隔")
 }
 delete_parser = get_arl_parser(delete_fields, location='json')
+
+# /delete_file 请求参数
+delete_file_fields = {
+    'name': fields.String(required=True, description="字典文件名")
+}
+delete_file_parser = get_arl_parser(delete_file_fields, location='json')
 
 def get_safe_dict_path(name):
     """防止目录穿越"""
@@ -63,7 +76,7 @@ class DictionaryDelete(Resource):
         """
         args = delete_parser.parse_args()
         name = args.get('name')
-        content = args.get('content', '')
+        content = args.get('content') or ''
         
         path = get_safe_dict_path(name)
         if not path:
@@ -110,19 +123,43 @@ class DictionaryDelete(Resource):
             logger.error(f"Error deleting from dictionary {name}: {e}")
             return {'code': 500, 'message': str(e)}
 
+@ns.route('/delete_file')
+class DictionaryDeleteFile(Resource):
+    @auth
+    @ns.expect(delete_file_parser)
+    def post(self):
+        """
+        删除字典文件
+        """
+        args = delete_file_parser.parse_args()
+        name = args.get('name')
+        
+        path = get_safe_dict_path(name)
+        if not path:
+            return {'code': 404, 'message': '文件不合法或不存在'}
+            
+        try:
+            os.remove(path)
+            return {'code': 200, 'message': 'success', 'data': {'name': name}}
+        except Exception as e:
+            logger.error(f"Error deleting dictionary file {name}: {e}")
+            return {'code': 500, 'message': str(e)}
+
 
 
 def get_category(filename):
-    if filename.startswith('domain_') or 'dns' in filename:
-        return '子域名收集 (Subdomain Recon)'
+    if filename.startswith('domain_'):
+        return '🌍 子域名爆破 (Subdomain Bruteforce)'
+    elif filename == 'altdnsdict.txt' or filename.startswith('altdns_'):
+        return '🧠 智能子域爆破 (AltDNS Dict)'
+    elif filename == 'dnsserver.txt' or filename.startswith('dnsserver_'):
+        return '🌐 DNS 解析配置 (DNS Config)'
     elif filename.startswith('file_'):
-        return '目录与文件泄露 (File/Dir Leak)'
+        return '📂 目录文件泄露 (File/Dir Leak)'
     elif filename.startswith('black'):
-        return '黑名单配置 (Blacklist)'
-    elif filename == 'dnsserver.txt':
-        return '基础网络配置 (Network Config)'
+        return '🛡️ 全局黑名单拦截 (Blacklist)'
     elif filename.startswith('port_'):
-        return '端口扫描策略 (Port Config)'
+        return '🔌 端口扫描策略 (Port Config)'
     else:
         return '其他 (Others)'
 
@@ -197,7 +234,7 @@ class DictionarySearch(Resource):
         """
         args = search_parser.parse_args()
         name = args.get('name')
-        keyword = args.get('keyword', '').strip()
+        keyword = (args.get('keyword') or '').strip()
         
         path = get_safe_dict_path(name)
         if not path:
@@ -239,7 +276,7 @@ class DictionaryAppend(Resource):
         """
         args = append_parser.parse_args()
         name = args.get('name')
-        content = args.get('content', '')
+        content = args.get('content') or ''
         
         path = get_safe_dict_path(name)
         if not path:
@@ -282,3 +319,110 @@ class DictionaryAppend(Resource):
         except Exception as e:
             logger.error(f"Error appending to dictionary {name}: {e}")
             return {'code': 500, 'message': str(e)}
+
+@ns.route('/create')
+class DictionaryCreate(Resource):
+    @auth
+    @ns.expect(create_parser)
+    def post(self):
+        """新建空字典，或新建并写入内容"""
+        args = create_parser.parse_args()
+        name = args.get('name')
+        content = args.get('content') or ''
+
+        # basic path sanitization
+        if '..' in name or '/' in name or '\\' in name:
+            return {'code': 400, 'message': '文件名不合法'}
+        if not name.endswith('.txt'):
+            name += '.txt'
+
+        path = os.path.join(DICT_DIR, name)
+        
+        if os.path.exists(path):
+            return {'code': 400, 'message': '字典已存在'}
+
+        try:
+            # Create file
+            entries = [line.strip() for line in content.split('\n') if line.strip()]
+            
+            # Write to file
+            with open(path, 'w', encoding='utf-8') as f:
+                if entries:
+                    # 去重，保留顺序
+                    seen = set()
+                    clean_entries = []
+                    for e in entries:
+                        if e not in seen:
+                            seen.add(e)
+                            clean_entries.append(e)
+                    f.write('\n'.join(clean_entries) + '\n')
+            
+            return {'code': 200, 'message': 'success', 'data': {'name': name}}
+        except Exception as e:
+            logger.error(f"Error creating dictionary {name}: {e}")
+            return {'code': 500, 'message': str(e)}
+
+
+from werkzeug.datastructures import FileStorage
+from app.services.dict_upload import trigger_dict_upload_task
+from app.utils import conn_db as conn
+
+upload_parser = ns.parser()
+upload_parser.add_argument('file', location='files', type=FileStorage, required=True)
+upload_parser.add_argument('name', location='form', type=str, required=True, help="字典文件名")
+
+status_parser = ns.parser()
+status_parser.add_argument('task_id', location='args', type=str, required=True, help="上传任务ID")
+
+@ns.route('/upload_large')
+class DictionaryUploadLarge(Resource):
+    @auth
+    @ns.expect(upload_parser)
+    def post(self):
+        """异步超大字典上传与去重"""
+        args = upload_parser.parse_args()
+        name = args.get('name')
+        file_obj = args.get('file')
+        
+        if '..' in name or '/' in name or '\\' in name:
+            return {"code": 400, "message": "字典名称非法"}
+        
+        if not name.endswith('.txt'):
+            name += '.txt'
+            
+        path = os.path.join(DICT_DIR, name)
+            
+        if not file_obj or file_obj.filename == '':
+            return {"code": 400, "message": "未上传文件"}
+            
+        if not file_obj.filename.endswith('.txt'):
+            return {"code": 400, "message": "仅支持 .txt 格式文件"}
+            
+        # 保存到临时目录
+        tmp_dir = os.path.join(Config.basedir if hasattr(Config, 'basedir') else os.path.dirname(os.path.dirname(__file__)), 'tmp_upload')
+        os.makedirs(tmp_dir, exist_ok=True)
+        
+        import uuid
+        tmp_filename = f"{uuid.uuid4().hex}.txt"
+        tmp_path = os.path.join(tmp_dir, tmp_filename)
+        
+        file_obj.save(tmp_path)
+        
+        task_id = trigger_dict_upload_task(tmp_path, path)
+        return {"code": 200, "message": "success", "task_id": task_id}
+
+@ns.route('/upload_status')
+class DictionaryUploadStatus(Resource):
+    @auth
+    @ns.expect(status_parser)
+    def get(self):
+        """查询字典上传任务状态"""
+        args = status_parser.parse_args()
+        task_id = args.get('task_id')
+        
+        task_info = conn('dict_upload_task').find_one({"task_id": task_id}, {"_id": 0})
+        if not task_info:
+            return {"code": 404, "message": "任务不存在"}
+            
+        return {"code": 200, "message": "success", "data": task_info}
+

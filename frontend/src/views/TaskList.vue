@@ -1,5 +1,7 @@
 <template>
   <div style="background-color: var(--arl-bg-layout); padding: 24px; min-height: calc(100vh - 64px);">
+    <div ref="actionBarRef" style="position: sticky; top: 0px; z-index: 10; background-color: var(--arl-bg-layout); margin: -24px -24px 16px -24px; padding: 24px 24px 16px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+
 
     <div style="margin-bottom: 24px;">
       <a-button type="primary" style="margin-right: 12px;" @click="showModal">添加任务</a-button>
@@ -87,6 +89,7 @@
     </div>
 
     <div style="margin-bottom: 16px;">
+      <a-button style="margin-right: 8px;" @click="resetSearch">清 除</a-button>
       <a-button :disabled="!hasSelected" style="margin-right: 8px;" @click="handleBatchDelete">批量删除</a-button>
       <a-button :disabled="!hasSelected" style="margin-right: 8px;" @click="handleBatchStop">批量停止</a-button>
       <a-dropdown :disabled="!hasSelected">
@@ -105,7 +108,9 @@
       </a-dropdown>
     </div>
 
-    <a-table
+    
+    </div>
+<a-table :sticky="stickyConfig"
         :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: onSelectChange }"
         :dataSource="taskList"
         :columns="columns"
@@ -195,7 +200,7 @@
 
     <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 16px;">
       <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(pagination.total / pagination.pageSize) || 1 }} 页 / {{ pagination.total }} 条数据</div>
-      <a-pagination v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" @showSizeChange="handleTableChange" />
+      <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" @showSizeChange="handleTableChange" />
     </div>
 
   </div>
@@ -215,8 +220,8 @@
     <a-form
         ref="formRef"
         :model="formState"
-        :label-col="{ style: { width: '115px' } }"
-        :wrapper-col="{ style: { width: 'calc(100% - 115px)' } }"
+        :label-col="{ style: { width: '140px' } }"
+        :wrapper-col="{ style: { width: 'calc(100% - 140px)' } }"
     >
       <a-form-item label="任务名称" name="name" :rules="[{ required: true, message: '请输入任务名称' }]">
         <a-input v-model:value="formState.name" placeholder="请输入任务名称" />
@@ -231,20 +236,27 @@
         />
       </a-form-item>
 
-      <a-form-item label="域名爆破类型" name="domain_brute_type" :rules="[{ required: true }]">
-        <a-select v-model:value="formState.domain_brute_type">
-          <a-select-option value="test">测试</a-select-option>
-          <a-select-option value="big">大字典</a-select-option>
+      <a-form-item label="域名爆破字典" name="domain_brute_type" :rules="[{ required: true }]">
+        <a-select v-model:value="formState.domain_brute_type" placeholder="请选择字典">
+          <a-select-option v-for="item in domainDicts" :key="item.name" :value="item.name">{{ item.name }}</a-select-option>
+        </a-select>
+      </a-form-item>
+
+      <a-form-item label="智能子域爆破字典" name="alt_dns_dict" :rules="[{ required: true }]">
+        <a-select v-model:value="formState.alt_dns_dict" placeholder="请选择字典">
+          <a-select-option v-for="item in altDnsDicts" :key="item.name" :value="item.name">{{ item.name }}</a-select-option>
         </a-select>
       </a-form-item>
 
       <a-form-item label="端口扫描类型" name="port_scan_type" :rules="[{ required: true }]">
-        <a-select v-model:value="formState.port_scan_type">
-          <a-select-option value="test">测试</a-select-option>
-          <a-select-option value="top100">TOP100</a-select-option>
-          <a-select-option value="top1000">TOP1000</a-select-option>
-          <a-select-option value="all">全端口</a-select-option>
-          <a-select-option value="custom">自定义端口字典</a-select-option>
+        <a-select v-model:value="formState.port_scan_type" placeholder="请选择字典">
+          <a-select-option v-for="item in portDicts" :key="item.name" :value="item.name">{{ item.name }}</a-select-option>
+        </a-select>
+      </a-form-item>
+
+      <a-form-item label="目录文件泄露字典" name="file_leak_dict" :rules="[{ required: true }]">
+        <a-select v-model:value="formState.file_leak_dict" placeholder="请选择字典">
+          <a-select-option v-for="item in fileLeakDicts" :key="item.name" :value="item.name">{{ item.name }}</a-select-option>
         </a-select>
       </a-form-item>
 
@@ -341,18 +353,34 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, createVNode } from 'vue';
+defineOptions({ name: 'TaskList' });
+
+import { ref as _ref_for_sticky, ref, reactive, onMounted, computed, createVNode, watch, onActivated } from 'vue';import { useSticky } from '../utils/useSticky';
+const actionBarRef = _ref_for_sticky(null);
+const { stickyConfig } = useSticky(actionBarRef);
+
 import { Modal, message, Checkbox } from 'ant-design-vue';
 import { useRouter } from 'vue-router'; // 新增：引入路由钩子
 // 引入 Antd 的图标（搜索放大镜、下拉箭头）
 import { SearchOutlined, DownOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue';
 import request from '../utils/request';
+import { useGlobalPageSize } from '../utils/useGlobalPageSize';
+
+const domainDicts = ref([]);
+const altDnsDicts = ref([]);
+const fileLeakDicts = ref([]);
+const portDicts = ref([]);
 
 // --- 表格与数据逻辑 ---
 const router = useRouter();
 const taskList = ref([]);
 const loading = ref(false);
-const pagination = reactive({ current: 1, pageSize: 10, total: 0, showSizeChanger: true });
+const globalPageSize = useGlobalPageSize(10);
+const pagination = reactive({ current: 1, pageSize: globalPageSize.value, total: 0, showSizeChanger: true });
+
+watch(() => pagination.pageSize, (newSize) => {
+  globalPageSize.value = newSize;
+});
 
 // 1:1 还原原版精确的宽带分配，并为任务名和目标开启排序
 const columns = [
@@ -624,8 +652,10 @@ const handleSyncOk = async () => {
 // --- 数据获取 ---
 // --- 数据获取与搜索逻辑 ---
 // --- 数据获取与搜索逻辑 ---
-const fetchTasks = async (page = 1, size = 10) => {
-  loading.value = true;
+const fetchTasks = async (page = 1, size = 10, silent = false) => {
+  if (!silent) {
+    loading.value = true;
+  }
   try {
     // 1. 基础分页参数
     const queryParams = { page, size };
@@ -673,7 +703,9 @@ const fetchTasks = async (page = 1, size = 10) => {
   } catch (error) {
     console.error('API 请求失败:', error);
   } finally {
-    loading.value = false;
+    if (!silent) {
+      loading.value = false;
+    }
   }
 };
 
@@ -681,9 +713,35 @@ const fetchTasks = async (page = 1, size = 10) => {
 const onSearch = () => {
   fetchTasks(1, pagination.pageSize);
 };
+const resetSearch = () => {
+  Object.assign(searchForm, {
+    name: '', target: '', task_id: '', type: undefined,
+    status: '', site_count: '', site_operator: '=',
+    domain_count: '', domain_operator: '=', wih_count: '', wih_operator: '='
+  });
+  onSearch();
+};
 
 const handleTableChange = (page, pageSize) => fetchTasks(page, pageSize);
-onMounted(() => fetchTasks(pagination.current, pagination.pageSize));
+onMounted(async () => {
+  fetchTasks(pagination.current, pagination.pageSize);
+  try {
+    const dictRes = await request.get('/dictionary/list');
+    if (dictRes.code === 200 && dictRes.data) {
+      domainDicts.value = dictRes.data.filter(item => item.category && item.category.includes('子域名爆破') && !item.category.includes('智能'));
+      altDnsDicts.value = dictRes.data.filter(item => item.category && item.category.includes('智能子域爆破'));
+      fileLeakDicts.value = dictRes.data.filter(item => item.category && (item.category.includes('目录文件泄露') || item.category.includes('目录与文件泄露')));
+      portDicts.value = dictRes.data.filter(item => item.category && item.category.includes('端口扫描策略'));
+
+      if (domainDicts.value.length > 0) formState.domain_brute_type = domainDicts.value[0].name;
+      if (altDnsDicts.value.length > 0) formState.alt_dns_dict = altDnsDicts.value[0].name;
+      if (fileLeakDicts.value.length > 0) formState.file_leak_dict = fileLeakDicts.value[0].name;
+      if (portDicts.value.length > 0) formState.port_scan_type = portDicts.value[0].name;
+    }
+  } catch (error) {
+    console.error('拉取字典列表失败:', error);
+  }
+});
 
 // --- 弹窗逻辑 (保持原样) ---
 const visible = ref(false);
@@ -714,7 +772,7 @@ const pluginCategories = [
   {
     title: '🕷️ Web 深度探测',
     plugins: [
-      { key: 'site_identify', label: '站点识别' },
+      { key: 'site_identify', label: '站点与指纹识别' },
       { key: 'search_engines', label: '搜索引擎调用' },
       { key: 'site_spider', label: '站点爬虫' },
       { key: 'web_info_hunter', label: 'WIH 调用' },
@@ -739,13 +797,17 @@ const defaultPlugins = {
 };
 
 // === 3. 表单状态初始化（不再依赖任何废弃变量） ===
-const formState = reactive({
+const defaultFormState = {
   name: "",
   target: "",
-  domain_brute_type: "big",
-  port_scan_type: "TOP100",
+  domain_brute_type: undefined,
+  port_scan_type: undefined,
+  alt_dns_dict: undefined,
+  file_leak_dict: undefined,
   ...defaultPlugins
-});
+};
+
+const formState = reactive({ ...defaultFormState });
 
 const showModal = () => { visible.value = true; };
 
@@ -770,7 +832,6 @@ const viewTask = (record) => {
   }
 
   // 4. 执行跳转！
-  console.log('准备跳转到详情页，携带参数:', query);
   router.push({ path: '/taskList/taskDetail', query });
 };
 
@@ -1055,6 +1116,9 @@ const goToGlobalView = () => {
   });
 };
 
+onActivated(() => {
+  fetchTasks(pagination.current, pagination.pageSize, true);
+});
 
 </script>
 

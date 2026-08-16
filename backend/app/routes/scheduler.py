@@ -1,6 +1,5 @@
-from bson import ObjectId
-from flask_restx import Resource, Api, reqparse, fields, Namespace
-from app.utils import get_logger, auth, truncate_string
+from flask_restx import fields, Namespace
+from app.utils import auth, truncate_string
 from app.modules import ErrorMsg
 from . import base_query_fields, ARLResource, get_arl_parser
 from app import scheduler as app_scheduler, utils
@@ -118,10 +117,10 @@ class AddARLScheduler(ARLResource):
 
                 curr_name = truncate_string(curr_name)
 
-                job_id = app_scheduler.add_job(domain=x, scope_id=scope_id,
+                scheduler_id = app_scheduler.add_scheduler(domain=x, scope_id=scope_id,
                                                options=task_options, interval=interval,
                                                name=curr_name, scope_type=AssetScopeType.DOMAIN)
-                ret_data.append({"domain": x, "scope_id": scope_id, "job_id": job_id})
+                ret_data.append({"domain": x, "scope_id": scope_id, "scheduler_id": scheduler_id})
 
         # 下发IP 类型监控任务
         if ip_targets:
@@ -132,16 +131,16 @@ class AddARLScheduler(ARLResource):
 
             curr_name = truncate_string(curr_name)
 
-            job_id = app_scheduler.add_job(domain=ip_target, scope_id=scope_id,
+            scheduler_id = app_scheduler.add_scheduler(domain=ip_target, scope_id=scope_id,
                                            options=task_options, interval=interval,
                                            name=curr_name, scope_type=AssetScopeType.IP)
-            ret_data.append({"domain": ip_target, "scope_id": scope_id, "job_id": job_id})
+            ret_data.append({"domain": ip_target, "scope_id": scope_id, "scheduler_id": scheduler_id})
 
         return utils.build_ret(ErrorMsg.Success, ret_data)
 
 
 delete_scheduler_fields = ns.model('deleteScheduler', {
-    "job_id": fields.List(fields.String(description="监控任务ID列表"))
+    "scheduler_id": fields.List(fields.String(description="监控任务ID列表"))
 })
 
 
@@ -155,23 +154,23 @@ class DeleteARLScheduler(ARLResource):
         删除监控周期任务
         """
         args = self.parse_args(delete_scheduler_fields)
-        job_id_list = args.get("job_id", [])
+        job_id_list = args.get("scheduler_id", [])
 
-        ret_data = {"job_id": job_id_list}
+        ret_data = {"scheduler_id": job_id_list}
 
-        for job_id in job_id_list:
-            item = app_scheduler.find_job(job_id)
+        for scheduler_id in job_id_list:
+            item = app_scheduler.find_scheduler(scheduler_id)
             if not item:
                 return utils.build_ret(ErrorMsg.JobNotFound, ret_data)
 
-        for job_id in job_id_list:
-            app_scheduler.delete_job(job_id)
+        for scheduler_id in job_id_list:
+            app_scheduler.delete_scheduler(scheduler_id)
 
         return utils.build_ret(ErrorMsg.Success, ret_data)
 
 
 recover_scheduler_fields = ns.model('recoverScheduler', {
-    "job_id": fields.String(required=True, description="监控任务ID")
+    "scheduler_id": fields.String(required=True, description="监控任务ID")
 })
 
 
@@ -186,23 +185,23 @@ class RecoverARLScheduler(ARLResource):
         恢复监控周期任务
         """
         args = self.parse_args(recover_scheduler_fields)
-        job_id = args.get("job_id")
+        scheduler_id = args.get("scheduler_id")
 
-        item = app_scheduler.find_job(job_id)
+        item = app_scheduler.find_scheduler(scheduler_id)
         if not item:
-            return utils.build_ret(ErrorMsg.JobNotFound, {"job_id": job_id})
+            return utils.build_ret(ErrorMsg.JobNotFound, {"scheduler_id": scheduler_id})
 
         status = item.get("status", SchedulerStatus.RUNNING)
         if status != SchedulerStatus.STOP:
-            return utils.build_ret(ErrorMsg.SchedulerStatusNotStop, {"job_id": job_id})
+            return utils.build_ret(ErrorMsg.SchedulerStatusNotStop, {"scheduler_id": scheduler_id})
 
-        app_scheduler.recover_job(job_id)
+        app_scheduler.recover_scheduler(scheduler_id)
 
-        return utils.build_ret(ErrorMsg.Success, {"job_id": job_id})
+        return utils.build_ret(ErrorMsg.Success, {"scheduler_id": scheduler_id})
 
 
 batch_recover_scheduler_fields = ns.model('batchRecoverScheduler', {
-    "job_id": fields.List(fields.String(required=True, description="监控任务ID列表"))
+    "scheduler_id": fields.List(fields.String(required=True, description="监控任务ID列表"))
 })
 
 
@@ -216,23 +215,23 @@ class BatchRecoverARLScheduler(ARLResource):
         批量恢复监控周期任务
         """
         args = self.parse_args(batch_recover_scheduler_fields)
-        job_id_list = args.get("job_id", [])
-        for job_id in job_id_list:
-            item = app_scheduler.find_job(job_id)
+        job_id_list = args.get("scheduler_id", [])
+        for scheduler_id in job_id_list:
+            item = app_scheduler.find_scheduler(scheduler_id)
             if not item:
-                return utils.build_ret(ErrorMsg.JobNotFound, {"job_id": job_id})
+                return utils.build_ret(ErrorMsg.JobNotFound, {"scheduler_id": scheduler_id})
 
             status = item.get("status", SchedulerStatus.RUNNING)
             if status != SchedulerStatus.STOP:
-                return utils.build_ret(ErrorMsg.SchedulerStatusNotStop, {"job_id": job_id})
+                return utils.build_ret(ErrorMsg.SchedulerStatusNotStop, {"scheduler_id": scheduler_id})
 
-            app_scheduler.recover_job(job_id)
+            app_scheduler.recover_scheduler(scheduler_id)
 
-        return utils.build_ret(ErrorMsg.Success, {"job_id": job_id_list})
+        return utils.build_ret(ErrorMsg.Success, {"scheduler_id": job_id_list})
 
 
 stop_scheduler_fields = ns.model('stopScheduler', {
-    "job_id": fields.String(required=True, description="监控任务ID")
+    "scheduler_id": fields.String(required=True, description="监控任务ID")
 })
 
 
@@ -247,23 +246,23 @@ class StopARLScheduler(ARLResource):
         停止监控周期任务
         """
         args = self.parse_args(stop_scheduler_fields)
-        job_id = args.get("job_id")
+        scheduler_id = args.get("scheduler_id")
 
-        item = app_scheduler.find_job(job_id)
+        item = app_scheduler.find_scheduler(scheduler_id)
         if not item:
-            return utils.build_ret(ErrorMsg.JobNotFound, {"job_id": job_id})
+            return utils.build_ret(ErrorMsg.JobNotFound, {"scheduler_id": scheduler_id})
 
         status = item.get("status", SchedulerStatus.RUNNING)
         if status != SchedulerStatus.RUNNING:
-            return utils.build_ret(ErrorMsg.SchedulerStatusNotRunning, {"job_id": job_id})
+            return utils.build_ret(ErrorMsg.SchedulerStatusNotRunning, {"scheduler_id": scheduler_id})
 
-        app_scheduler.stop_job(job_id)
+        app_scheduler.stop_scheduler(scheduler_id)
 
-        return utils.build_ret(ErrorMsg.Success, {"job_id": job_id})
+        return utils.build_ret(ErrorMsg.Success, {"scheduler_id": scheduler_id})
 
 
 batch_stop_scheduler_fields = ns.model('batchStopScheduler', {
-    "job_id": fields.List(fields.String(required=True, description="监控任务ID列表"))
+    "scheduler_id": fields.List(fields.String(required=True, description="监控任务ID列表"))
 })
 
 
@@ -277,19 +276,19 @@ class BatchStopARLScheduler(ARLResource):
         停止监控周期任务
         """
         args = self.parse_args(batch_stop_scheduler_fields)
-        job_id_list = args.get("job_id", [])
-        for job_id in job_id_list:
-            item = app_scheduler.find_job(job_id)
+        job_id_list = args.get("scheduler_id", [])
+        for scheduler_id in job_id_list:
+            item = app_scheduler.find_scheduler(scheduler_id)
             if not item:
-                return utils.build_ret(ErrorMsg.JobNotFound, {"job_id": job_id})
+                return utils.build_ret(ErrorMsg.JobNotFound, {"scheduler_id": scheduler_id})
 
             status = item.get("status", SchedulerStatus.RUNNING)
             if status != SchedulerStatus.RUNNING:
-                return utils.build_ret(ErrorMsg.SchedulerStatusNotRunning, {"job_id": job_id})
+                return utils.build_ret(ErrorMsg.SchedulerStatusNotRunning, {"scheduler_id": scheduler_id})
 
-            app_scheduler.stop_job(job_id)
+            app_scheduler.stop_scheduler(scheduler_id)
 
-        return utils.build_ret(ErrorMsg.Success, {"job_id": job_id_list})
+        return utils.build_ret(ErrorMsg.Success, {"scheduler_id": job_id_list})
 
 
 add_scheduler_site_fields = ns.model('addSchedulerSite', {
@@ -379,7 +378,7 @@ class AddWihScheduler(ARLResource):
 
 
 run_scheduler_fields = ns.model('runScheduler', {
-    "job_id": fields.String(required=True, description="监控任务ID")
+    "scheduler_id": fields.String(required=True, description="监控任务ID")
 })
 
 
@@ -393,19 +392,19 @@ class RunARLScheduler(ARLResource):
         立即执行监控周期任务
         """
         args = self.parse_args(run_scheduler_fields)
-        job_id = args.get("job_id")
+        scheduler_id = args.get("scheduler_id")
 
-        item = app_scheduler.find_job(job_id)
+        item = app_scheduler.find_scheduler(scheduler_id)
         if not item:
-            return utils.build_ret(ErrorMsg.JobNotFound, {"job_id": job_id})
+            return utils.build_ret(ErrorMsg.JobNotFound, {"scheduler_id": scheduler_id})
 
-        app_scheduler.run_job(job_id)
+        app_scheduler.run_scheduler(scheduler_id)
 
-        return utils.build_ret(ErrorMsg.Success, {"job_id": job_id})
+        return utils.build_ret(ErrorMsg.Success, {"scheduler_id": scheduler_id})
 
 
 batch_run_scheduler_fields = ns.model('batchRunScheduler', {
-    "job_id": fields.List(fields.String(required=True, description="监控任务ID列表"))
+    "scheduler_id": fields.List(fields.String(required=True, description="监控任务ID列表"))
 })
 
 
@@ -419,13 +418,106 @@ class BatchRunARLScheduler(ARLResource):
         批量立即执行监控周期任务
         """
         args = self.parse_args(batch_run_scheduler_fields)
-        job_id_list = args.get("job_id", [])
-        for job_id in job_id_list:
-            item = app_scheduler.find_job(job_id)
+        job_id_list = args.get("scheduler_id", [])
+        for scheduler_id in job_id_list:
+            item = app_scheduler.find_scheduler(scheduler_id)
             if not item:
-                return utils.build_ret(ErrorMsg.JobNotFound, {"job_id": job_id})
+                return utils.build_ret(ErrorMsg.JobNotFound, {"scheduler_id": scheduler_id})
 
-            app_scheduler.run_job(job_id)
+            app_scheduler.run_scheduler(scheduler_id)
 
-        return utils.build_ret(ErrorMsg.Success, {"job_id": job_id_list})
+        return utils.build_ret(ErrorMsg.Success, {"scheduler_id": job_id_list})
 
+
+one_time_scan_fields = ns.model('oneTimeScan', {
+    "scope_id": fields.String(required=True, description="资产范围 id"),
+    "domain": fields.String(required=True, description="目标域名，多个逗号分隔"),
+    "policy_id": fields.String(required=True, description="策略ID"),
+    "name": fields.String(description="一次性扫描任务名称", example=""),
+})
+
+@ns.route('/one_time_scan/')
+class OneTimeScanScheduler(ARLResource):
+    @auth
+    @ns.expect(one_time_scan_fields)
+    def post(self):
+        """
+        下发一次性资产监控并同步的任务
+        """
+        args = self.parse_args(one_time_scan_fields)
+        scope_id = args.pop("scope_id")
+        domain = args.pop("domain")
+        policy_id = args.pop("policy_id")
+        name = args.pop("name", "")
+
+        scope_data = utils.arl.scope_data_by_id(scope_id)
+        if not scope_data:
+            return utils.build_ret(ErrorMsg.NotFoundScopeID, {"scope_id": scope_id})
+
+        task_options = get_options_by_policy_id(policy_id, TaskTag.TASK)
+        if task_options is None:
+            return utils.build_ret(ErrorMsg.PolicyIDNotFound, {"policy_id": policy_id})
+
+        domains = domain.split(",")
+        domain_targets = []
+        ip_targets = []
+        for x in domains:
+            curr_target = x.strip()
+            if not curr_target:
+                continue
+            if utils.is_valid_domain(curr_target):
+                domain_targets.append(curr_target)
+            else:
+                ip_targets.append(curr_target)
+                
+        if not domain_targets and not ip_targets:
+            return utils.build_ret(ErrorMsg.DomainInvalid, {"domain": domain})
+            
+        from app.modules import CeleryAction, CeleryRoutingKey
+        from app import celerytask
+        
+        ret_data = []
+        # 下发 域名类型一次性扫描
+        for x in domain_targets:
+            curr_name = name
+            if not name:
+                curr_name = "一次性扫描-{}-{}".format(scope_data["name"], x)
+            curr_name = truncate_string(curr_name)
+            
+            task_data = {
+                "domain": x,
+                "scope_id": scope_id,
+                "type": AssetScopeType.DOMAIN,
+                "monitor_options": task_options,
+                "name": curr_name
+            }
+            options = {
+                "celery_action": CeleryAction.ONESHOT_DOMAIN_EXEC_TASK,
+                "data": task_data
+            }
+            celery_id = celerytask.arl_task.apply_async(kwargs={'options': options}, queue=CeleryRoutingKey.ASSET_TASK_HEAVY)
+            ret_data.append({"domain": x, "celery_id": str(celery_id)})
+
+        # 下发 IP 类型一次性扫描
+        if ip_targets:
+            curr_name = name
+            ip_target = " ".join(ip_targets)
+            if not name:
+                curr_name = "一次性扫描-{}-{}".format(scope_data["name"], ip_target)
+            curr_name = truncate_string(curr_name)
+
+            task_data = {
+                "domain": ip_target,
+                "scope_id": scope_id,
+                "type": AssetScopeType.IP,
+                "monitor_options": task_options,
+                "name": curr_name
+            }
+            options = {
+                "celery_action": CeleryAction.ONESHOT_IP_EXEC_TASK,
+                "data": task_data
+            }
+            celery_id = celerytask.arl_task.apply_async(kwargs={'options': options}, queue=CeleryRoutingKey.ASSET_TASK_HEAVY)
+            ret_data.append({"domain": ip_target, "celery_id": str(celery_id)})
+            
+        return utils.build_ret(ErrorMsg.Success, ret_data)

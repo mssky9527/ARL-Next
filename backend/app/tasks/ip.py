@@ -1,11 +1,8 @@
-from bson.objectid import  ObjectId
-import time
 from app import services
 from app.modules import ScanPortType, get_scan_ports, TaskStatus
 from app.services import fetchCert, run_risk_cruising, run_sniffer
 from app import utils
 from app.services.commonTask import CommonTask, BaseUpdateTask, WebSiteFetch
-from app.config import Config
 
 
 logger = utils.get_logger()
@@ -64,7 +61,6 @@ class IPTask(CommonTask):
 
     def port_scan(self):
         scan_port_map = {
-            "test": ScanPortType.TEST,
             "top100": ScanPortType.TOP100,
             "top1000": ScanPortType.TOP1000,
             "all": ScanPortType.ALL,
@@ -75,7 +71,7 @@ class IPTask(CommonTask):
         if option_scan_port_type == "custom" and self.options.get("port_custom"):
             actual_ports = self.options.get("port_custom")
         else:
-            mapped_type = scan_port_map.get(option_scan_port_type, ScanPortType.TEST)
+            mapped_type = scan_port_map.get(option_scan_port_type, ScanPortType.TOP100)
             actual_ports = get_scan_ports(mapped_type)
 
         scan_port_option = {
@@ -163,6 +159,7 @@ class IPTask(CommonTask):
         else:
             self.cert_map = ssl_cert(self.ip_set)
 
+        all_certs = []
         for target in self.cert_map:
             if ":" not in target:
                 continue
@@ -176,7 +173,9 @@ class IPTask(CommonTask):
                 "task_id": self.task_id,
             }
             item["cert"]["md5"] = cert_data.get("fingerprint", {}).get("md5")
-            utils.safe_insert_asset('cert', ['task_id', 'ip', 'port'], item)
+            all_certs.append(item)
+        if all_certs:
+            utils.safe_insert_asset_many('cert', ['task_id', 'ip', 'port'], all_certs)
 
     def save_service_info(self):
         self.service_info_list = []
@@ -221,7 +220,8 @@ class IPTask(CommonTask):
             self.npoc_service_target_set.add(item["target"])
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
-            utils.safe_insert_asset('npoc_service', ['task_id', 'target'], item)
+        if result:
+            utils.safe_insert_asset_many('npoc_service', ['task_id', 'target'], result)
 
     def brute_config(self):
         plugins = []
@@ -236,77 +236,75 @@ class IPTask(CommonTask):
         targets = self.site_list.copy()
         targets += list(self.npoc_service_target_set)
         result = run_risk_cruising(targets=targets, plugins=plugins)
-        for item in result:
-            item["task_id"] = self.task_id
-            item["save_date"] = utils.curr_date()
-            utils.safe_insert_asset('vuln', ['task_id', 'target', 'plugin_name'], item)
+        if result:
+            for item in result:
+                item["task_id"] = self.task_id
+                item["save_date"] = utils.curr_date()
+            utils.safe_insert_asset_many('vuln', ['task_id', 'target', 'plugin_name'], result)
 
     def run(self):
         base_update = self.base_update_task
         base_update.update_task_field("start_time", utils.curr_date())
+        
         '''***端口扫描开始***'''
         if self.options.get("port_scan"):
-            base_update.update_task_field("status", "port_scan")
-            t1 = time.time()
-            self.port_scan()
-            elapse = time.time() - t1
-            base_update.update_services("port_scan", elapse)
+            with self.safe_phase("port_scan", base_update):
+                self.port_scan()
 
         # 存储服务信息
         if self.options.get("service_detection"):
-            self.save_service_info()
+            with self.safe_phase("service_detection", base_update):
+                self.save_service_info()
 
         '''***证书获取开始***'''
         if self.options.get("ssl_cert"):
-            base_update.update_task_field("status", "ssl_cert")
-            t1 = time.time()
-            self.ssl_cert()
-            elapse = time.time() - t1
-            base_update.update_services("ssl_cert", elapse)
+            with self.safe_phase("ssl_cert", base_update):
+                self.ssl_cert()
 
-        base_update.update_task_field("status", "find_site")
-        t1 = time.time()
-        self.find_site()
-        elapse = time.time() - t1
-        base_update.update_services("find_site", elapse)
+        with self.safe_phase("find_site", base_update):
+            self.find_site()
 
+        # 站点基础信息获取 (已剔除高危漏扫，纯净 Recon)
         web_site_fetch = WebSiteFetch(task_id=self.task_id,
                                       sites=self.site_list,
                                       options=self.options)
-        web_site_fetch.run()
+        with self.safe_phase("web_site_fetch", base_update):
+            web_site_fetch.run()
 
         """服务识别（python）实现"""
         if self.options.get("npoc_service_detection"):
-            base_update.update_task_field("status", "npoc_service_detection")
-            t1 = time.time()
-            self.npoc_service_detection()
-            elapse = time.time() - t1
-            base_update.update_services("npoc_service_detection", elapse)
+            with self.safe_phase("npoc_service_detection", base_update):
+                self.npoc_service_detection()
 
         """ *** npoc 调用 """
         if self.options.get("poc_config"):
-            base_update.update_task_field("status", "poc_run")
-            t1 = time.time()
-            web_site_fetch.risk_cruising(self.npoc_service_target_set)
-            elapse = time.time() - t1
-            base_update.update_services("poc_run", elapse)
+            with self.safe_phase("poc_run", base_update):
+                web_site_fetch.risk_cruising(self.npoc_service_target_set)
+
+        """ *** 对站点进行文件目录爆破 """
+        if self.options.get("file_leak"):
+            with self.safe_phase("file_leak", base_update):
+                web_site_fetch.run_func("file_leak", web_site_fetch.file_leak)
 
         """弱口令爆破服务"""
         if self.options.get("brute_config"):
-            base_update.update_task_field("status", "weak_brute")
-            t1 = time.time()
-            self.brute_config()
-            elapse = time.time() - t1
-            base_update.update_services("weak_brute", elapse)
+            with self.safe_phase("weak_brute", base_update):
+                self.brute_config()
 
-        # 加上统计信息
-        self.insert_finger_stat()
-        self.insert_cip_stat()
-        self.insert_task_stat()
+        # nuclei_scan 放在最后执行，防止高并发扫描把目标打挂或者触发IP封禁
+        if self.options.get("nuclei_scan"):
+            with self.safe_phase("nuclei_scan", base_update):
+                web_site_fetch.run_func("nuclei_scan", web_site_fetch.nuclei_scan)
 
-        # 如果有关联的资产分组就进行同步，同步这块有点乱
-        if self.task_tag == "task":
-            self.sync_asset()
+        # 执行统计和同步操作
+        with self.safe_phase("task_stats", base_update):
+            self.insert_finger_stat()
+            self.insert_cip_stat()
+            self.insert_task_stat()
+
+            # 如果有关联的资产分组就进行同步，同步这块有点乱
+            if self.task_tag == "task":
+                self.sync_asset()
 
         base_update.update_task_field("status", TaskStatus.DONE)
         base_update.update_task_field("end_time", utils.curr_date())

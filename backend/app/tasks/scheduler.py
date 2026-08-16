@@ -7,30 +7,46 @@ from app import utils
 from app.modules import TaskStatus, CollectSource, SchedulerStatus
 from app.services import sync_asset, build_domain_info, sync_asset
 import time
-from app.scheduler import update_job_run
+from app.scheduler import update_scheduler_run
 from app.services import webhook
 
 logger = utils.get_logger()
 
-def domain_executors(base_domain=None, job_id=None, scope_id=None, options=None, name=""):
+def domain_executors(base_domain=None, scheduler_id=None, scope_id=None, options=None, name=""):
     logger.info("start domain_executors {} {} {}".format(base_domain, scope_id, options))
     try:
-        query = {"_id": ObjectId(job_id)}
+        query = {"_id": ObjectId(scheduler_id)}
         item = utils.conn_db('scheduler').find_one(query)
         if not item:
-            logger.info("stop  domain_executors {}  not found job_id {}".format(base_domain, job_id))
+            logger.info("stop  domain_executors {}  not found scheduler_id {}".format(base_domain, scheduler_id))
             return
 
         if item.get("status") == SchedulerStatus.STOP:
-            logger.info("stop  ip_executors {}  job_id {} is stop ".format(base_domain, job_id))
+            logger.info("stop  ip_executors {}  scheduler_id {} is stop ".format(base_domain, scheduler_id))
             return
 
-        wrap_domain_executors(base_domain=base_domain, job_id=job_id, scope_id=scope_id, options=options, name=name)
+        wrap_domain_executors(base_domain=base_domain, scheduler_id=scheduler_id, scope_id=scope_id, options=options, name=name)
     except Exception as e:
         logger.exception(e)
 
 
-def wrap_domain_executors(base_domain=None, job_id=None, scope_id=None, options=None, name=""):
+def wrap_domain_executors(base_domain=None, scheduler_id=None, scope_id=None, options=None, name=""):
+    import time
+    import random
+    
+    # 随机休眠避免并发冲突
+    time.sleep(random.uniform(0.1, 1.0))
+    
+    # 二次防重：防止多个 Celery Worker 同时消费到队列中积压的重复消息
+    running_tasks = conn('task').count_documents({
+        "options.scheduler_id": scheduler_id,
+        "status": {"$nin": [TaskStatus.DONE, TaskStatus.ERROR, TaskStatus.STOP]}
+    })
+    
+    if running_tasks > 0:
+        logger.warning(f"Task overlap prevented in worker: scheduler {scheduler_id} is already running. Dropping duplicate message.")
+        return
+
     celery_id = "celery_id_placeholder"
 
     if current_task._get_current_object():
@@ -43,6 +59,8 @@ def wrap_domain_executors(base_domain=None, job_id=None, scope_id=None, options=
         'status': 'waiting',
         'type': 'domain',
         'task_tag': 'monitor',  #标记为监控任务
+        'end_time': '-',
+        'service': [],
         'options': {
             'domain_brute': True,
             'domain_brute_type': 'test',
@@ -63,7 +81,7 @@ def wrap_domain_executors(base_domain=None, job_id=None, scope_id=None, options=
             'dns_query_plugin': False,
             'web_info_hunter': False,
             'scope_id': scope_id,
-            'job_id': job_id
+            'scheduler_id': scheduler_id
         },
         'celery_id': celery_id
     }
@@ -78,10 +96,10 @@ def wrap_domain_executors(base_domain=None, job_id=None, scope_id=None, options=
         
     domain_executor = DomainExecutor(base_domain, task_id, task_data["options"])
     try:
-        update_job_run(job_id)
+        update_scheduler_run(scheduler_id)
         new_domain = domain_executor.run()
+        sync_asset(task_id, scope_id, update_flag=True, push_flag=True, task_name=name)
         if new_domain:
-            sync_asset(task_id, scope_id, update_flag=True, push_flag=True, task_name=name)
             webhook.domain_asset_web_hook(task_id=task_id, scope_id=scope_id)
     except Exception as e:
         logger.exception(e)
@@ -89,6 +107,67 @@ def wrap_domain_executors(base_domain=None, job_id=None, scope_id=None, options=
         domain_executor.update_task_field("end_time", utils.curr_date())
 
     logger.info("end domain_executors {} {} {}".format(base_domain, scope_id, options))
+
+
+def oneshot_domain_executors(base_domain=None, scope_id=None, options=None, name=""):
+    celery_id = "celery_id_placeholder"
+
+    if current_task._get_current_object():
+        celery_id = current_task.request.id
+
+    task_data = {
+        'name': name,
+        'target': base_domain,
+        'start_time': '-',
+        'status': 'waiting',
+        'type': 'domain',
+        'task_tag': 'monitor',  # 标记为监控任务，以便正常走后期的联动逻辑
+        'end_time': '-',
+        'service': [],
+        'options': {
+            'domain_brute': True,
+            'domain_brute_type': 'test',
+            'alt_dns': False,
+            'arl_search': True,
+            'port_scan_type': 'test',
+            'port_scan': True,
+            'service_detection': False,
+            'service_brute': False,
+            'os_detection': False,
+            'site_identify': False,
+            'site_capture': False,
+            'file_leak': False,
+            'site_spider': False,
+            'search_engines': False,
+            'ssl_cert': False,
+            'fofa_search': False,
+            'dns_query_plugin': False,
+            'web_info_hunter': False,
+            'scope_id': scope_id
+        },
+        'celery_id': celery_id
+    }
+    if options is None:
+        options = {}
+    task_data["options"].update(options)
+
+    conn('task').insert_one(task_data)
+    task_id = str(task_data.pop("_id"))
+    
+    arl_task_id_var.set(task_id)
+        
+    domain_executor = DomainExecutor(base_domain, task_id, task_data["options"])
+    try:
+        new_domain = domain_executor.run()
+        sync_asset(task_id, scope_id, update_flag=True, push_flag=True, task_name=name)
+        if new_domain:
+            webhook.domain_asset_web_hook(task_id=task_id, scope_id=scope_id)
+    except Exception as e:
+        logger.exception(e)
+        domain_executor.update_task_field("status", TaskStatus.ERROR)
+        domain_executor.update_task_field("end_time", utils.curr_date())
+
+    logger.info("end oneshot_domain_executors {} {} {}".format(base_domain, scope_id, options))
 
 
 # ***域名监控任务　＊＊＊
@@ -103,19 +182,20 @@ class DomainExecutor(DomainTask):
         self.wildcard_ip_set = None
 
     def run(self):
+        base_update = self.base_update_task
         self.update_task_field("start_time", utils.curr_date())
+        
         self.domain_fetch()
         for domain_info in self.domain_info_list:
             self.domain_set.add(domain_info.domain)
 
-        self.set_scope_domain()
-
-        new_domain_set = self.domain_set - self.scope_domain_set
-        self.new_domain_set = new_domain_set
-
-        self.set_wildcard_ip_set()
-
-        self.set_domain_info_list()
+        with self.safe_phase("domain_sync", base_update):
+            self.set_scope_domain()
+            target_scope_domains = {d for d in self.scope_domain_set if d == self.base_domain or d.endswith("." + self.base_domain)}
+            new_domain_set = self.domain_set | target_scope_domains
+            self.new_domain_set = new_domain_set
+            self.set_wildcard_ip_set()
+            self.set_domain_info_list()
 
         # 返回发现的新域名，在后续进行同步到资产组
         ret_new_domain_set = set()
@@ -124,15 +204,37 @@ class DomainExecutor(DomainTask):
 
         # 仅仅对新增域名保留
         self.start_ip_fetch()
+            
         self.start_site_fetch()
 
-        # cidr ip 结果统计，插入cip 集合中
-        self.insert_cip_stat()
+        with self.safe_phase("process_wih_domains", base_update):
+            self.process_wih_domains()
 
-        # 任务指纹信息统计
-        self.insert_finger_stat()
-        # 任务结果统计
-        self.insert_task_stat()
+        if self.options.get("findvhost"):
+            with self.safe_phase("find_vhost", base_update):
+                self.start_find_vhost()
+
+        if self.options.get("npoc_service_detection") or self.options.get("poc_config") or self.options.get("brute_config"):
+            with self.safe_phase("poc_run", base_update):
+                self.start_poc_run()
+            
+        if self.options.get("file_leak"):
+            if hasattr(self, 'web_site_fetch') and self.web_site_fetch:
+                self.web_site_fetch.run_func("file_leak", self.web_site_fetch.file_leak)
+
+        # nuclei_scan 放在最后执行，防止高并发扫描把目标打挂或者触发IP封禁
+        if self.options.get("nuclei_scan"):
+            if hasattr(self, 'web_site_fetch') and self.web_site_fetch:
+                self.web_site_fetch.run_func("nuclei_scan", self.web_site_fetch.nuclei_scan)
+
+        with self.safe_phase("task_stats", base_update):
+            # cidr ip 结果统计，插入cip 集合中
+            self.insert_cip_stat()
+
+            # 任务指纹信息统计
+            self.insert_finger_stat()
+            # 任务结果统计
+            self.insert_task_stat()
 
         self.update_task_field("status", TaskStatus.DONE)
         self.update_task_field("end_time", utils.curr_date())
@@ -204,12 +306,41 @@ class DomainExecutor(DomainTask):
 
 # ***IP监控任务　＊＊＊
 class IPExecutor(IPTask):
-    def __init__(self, target, scope_id, task_name, job_id, options):
+    def __init__(self, target, scope_id, task_name, scheduler_id, options):
         super().__init__(ip_target=target, task_id=None, options=options)
         self.scope_id = scope_id
         self.task_name = task_name
-        self.job_id = job_id
+        self.scheduler_id = scheduler_id
         self.task_tag = "monitor"  # 标记为监控任务
+
+    def port_scan(self):
+        # 提取历史资产，确保资产组里的旧 IP 也能被重扫
+        self.set_asset_ip()
+        
+        target_set = set(self.ip_target.split())
+        
+        # 解析当前的输入目标范围
+        import ipaddress
+        target_networks = []
+        for t in target_set:
+            try:
+                target_networks.append(ipaddress.ip_network(t, strict=False))
+            except Exception:
+                pass
+                
+        # 仅合并属于当前目标网段的历史 IP
+        for ip in self.asset_ip_info_map.keys():
+            try:
+                ip_obj = ipaddress.ip_address(ip)
+                if any(ip_obj in net for net in target_networks):
+                    target_set.add(ip)
+            except Exception:
+                pass
+            
+        self.ip_target = " ".join(target_set)
+        
+        # 交给底层的端口扫描引擎执行
+        super().port_scan()
 
     def insert_task_data(self):
         celery_id = ""
@@ -224,6 +355,7 @@ class IPExecutor(IPTask):
             'status': TaskStatus.WAITING,
             'type': 'ip',
             'task_tag': 'monitor',  # 标记为监控任务
+            'service': [],
             'options': {
                 "port_scan_type": "test",
                 "port_scan": True,
@@ -236,7 +368,7 @@ class IPExecutor(IPTask):
                 "ssl_cert": False,
                 'web_info_hunter': False,
                 'scope_id': self.scope_id,
-                'job_id': self.job_id
+                'scheduler_id': self.scheduler_id
             },
             'celery_id': celery_id
         }
@@ -287,10 +419,8 @@ class IPExecutor(IPTask):
             new_port_info_list = []
             for port_info in ip_info["port_info"]:
                 ip_port = "{}:{}".format(curr_ip, port_info["port_id"])
-                if ip_port in self.asset_ip_port_set:
-                    continue
-
-                new_port_info_list.append(port_info)
+                if ip_port not in self.asset_ip_port_set:
+                    new_port_info_list.append(port_info)
 
             if new_port_info_list:
                 asset_ip_info = self.asset_ip_info_map[curr_ip]
@@ -302,50 +432,58 @@ class IPExecutor(IPTask):
                 query = {"_id": asset_ip_info["_id"]}
                 utils.conn_db('asset_ip').update_one(query, {"$set": update_info})
 
-                # 只是保存新发现的端口
-                ip_info["port_info"] = new_port_info_list
-                utils.conn_db('ip').insert_one(ip_info)
+                # 存入数据库记录，只记录新发现的端口
+                ip_info_copy = ip_info.copy()
+                ip_info_copy["port_info"] = new_port_info_list
+                utils.conn_db('ip').insert_one(ip_info_copy)
 
-                new_ip_info_list.append(ip_info)
-                continue
+            # 无论是否发现新端口，无论是一次性扫描还是周期任务，
+            # 都不再丢弃已有端口，让该IP全量进入后续流程，实现 100% 重扫。
+            new_ip_info_list.append(ip_info)
 
         self.ip_info_list = new_ip_info_list
         logger.info("found new ip_info {}".format(len(self.ip_info_list)))
 
-    # 同步SITE 和 web_info_hunter 信息
+    # 同步全部资产信息（包含站点、wih、风险等）
     def sync_asset_site_wih(self):
-        have_data = False
-        query = {"task_id": self.task_id}
-
-        if utils.conn_db('site').count_documents(query) or utils.conn_db('wih').count_documents(query):
-            have_data = True
-
-        # 有数据才同步
-        if not have_data:
-            return
-
-        sync_asset(self.task_id, self.scope_id, update_flag=False, category=["site", "wih"],
+        sync_asset(self.task_id, self.scope_id, update_flag=False,
                    push_flag=True, task_name=self.task_name)
 
 
-def ip_executor(target, scope_id, task_name, job_id, options):
+def ip_executor(target, scope_id, task_name, scheduler_id, options):
+    import time
+    import random
+    
+    # 随机休眠避免并发冲突
+    time.sleep(random.uniform(0.1, 1.0))
+    
+    # 二次防重：防止队列积压导致的重复消费
+    running_tasks = conn('task').count_documents({
+        "options.scheduler_id": scheduler_id,
+        "status": {"$nin": [TaskStatus.DONE, TaskStatus.ERROR, TaskStatus.STOP]}
+    })
+    
+    if running_tasks > 0:
+        logger.warning(f"Task overlap prevented in worker: IP scheduler {scheduler_id} is already running. Dropping duplicate message.")
+        return
+
     try:
-        query = {"_id": ObjectId(job_id)}
+        query = {"_id": ObjectId(scheduler_id)}
         item = utils.conn_db('scheduler').find_one(query)
         if not item:
-            logger.info("stop  ip_executors {}  not found job_id {}".format(target, job_id))
+            logger.info("stop  ip_executors {}  not found scheduler_id {}".format(target, scheduler_id))
             return
 
         if item.get("status") == SchedulerStatus.STOP:
-            logger.info("stop  ip_executors {}  job_id {} is stop ".format(target, job_id))
+            logger.info("stop  ip_executors {}  scheduler_id {} is stop ".format(target, scheduler_id))
             return
 
-        update_job_run(job_id)
+        update_scheduler_run(scheduler_id)
     except Exception as e:
         logger.exception(e)
         return
 
-    executor = IPExecutor(target, scope_id, task_name, job_id, options)
+    executor = IPExecutor(target, scope_id, task_name, scheduler_id, options)
     try:
         executor.insert_task_data()
         executor.run()
@@ -353,5 +491,17 @@ def ip_executor(target, scope_id, task_name, job_id, options):
 
     except Exception as e:
         logger.warning("error on ip_executor {}".format(executor.ip_target))
+        logger.exception(e)
+        executor.base_update_task.update_task_field("status", TaskStatus.ERROR)
+
+def oneshot_ip_executors(target, scope_id, task_name, options):
+    # This is a one-time execution, no scheduler_id
+    executor = IPExecutor(target, scope_id, task_name, "oneshot", options)
+    try:
+        executor.insert_task_data()
+        executor.run()
+        executor.sync_asset_site_wih()
+    except Exception as e:
+        logger.warning("error on oneshot_ip_executors {}".format(executor.ip_target))
         logger.exception(e)
         executor.base_update_task.update_task_field("status", TaskStatus.ERROR)

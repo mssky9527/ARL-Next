@@ -1,5 +1,6 @@
 <template>
   <div style="background-color: var(--arl-bg-layout); padding: 24px; min-height: calc(100vh - 64px);">
+    <div ref="actionBarRef" style="position: sticky; top: 0px; z-index: 10; background-color: var(--arl-bg-layout); margin: -24px -24px 16px -24px; padding: 24px 24px 16px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
     <a-page-header
       @back="() => router.back()"
       style="padding: 0 0 24px 0;"
@@ -18,7 +19,7 @@
       </template>
     </a-page-header>
 
-    <a-tabs v-model:activeKey="activeTab" type="card" class="arl-detail-tabs">
+    <a-tabs v-model:activeKey="activeTab" type="card" class="arl-detail-tabs" style="margin-bottom: 16px;">
       <a-tab-pane key="site" :tab="query.task_id ? `站点 - ${queryCounts.site}` : '站点'"></a-tab-pane>
       <a-tab-pane key="domain" :tab="query.task_id ? `子域名 - ${queryCounts.domain}` : '子域名'"></a-tab-pane>
       <a-tab-pane key="ip" :tab="query.task_id ? `IP - ${queryCounts.ip}` : 'IP'"></a-tab-pane>
@@ -35,11 +36,10 @@
       <a-tab-pane v-if="query.task_id" key="syslog" tab="任务日志"></a-tab-pane>
     </a-tabs>
 
-    <div v-if="tabConfig[activeTab]?.searchFields && activeTab !== 'syslog'" class="search-row" style="margin-bottom: 16px;">
-      <div v-for="field in tabConfig[activeTab].searchFields" :key="field.key" class="search-item">
-        <span class="label">{{ field.label }}：</span>
-
-        <a-select
+    <div v-if="tabConfig[activeTab]?.searchFields && activeTab !== 'syslog'" style="margin-bottom: 16px;">
+      <a-form :model="searchForm" layout="inline" style="row-gap: 16px;">
+      <a-form-item v-for="field in tabConfig[activeTab].searchFields" :key="field.key" :label="field.label + '：'">
+                <a-select
             v-if="field.type === 'select'"
             v-model:value="searchForm[field.key]"
             :placeholder="`请选择${field.label}`"
@@ -107,24 +107,28 @@
             <search-outlined @click="onSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" />
           </template>
         </a-input>
-      </div>
+      </a-form-item>
+      </a-form>
     </div>
 
     <div v-show="activeTab !== 'syslog'" style="margin-bottom: 16px;">
-      <a-button :disabled="!hasSelected" style="margin-right: 16px;" @click="handleBatchDelete">批量删除</a-button>
       <a-button style="margin-right: 16px;" @click="resetSearch">清 除</a-button>
+      <a-button :disabled="!hasSelected" style="margin-right: 16px;" @click="handleBatchDelete">批量删除</a-button>
       <a-button v-if="tabConfig[activeTab]?.exportName" type="primary" style="margin-right: 16px;" @click="handleExport">导出{{ tabConfig[activeTab].exportName }}</a-button>
       <a-button v-if="activeTab === 'site'" type="primary" @click="openRiskModal">风险任务下发</a-button>
     </div>
+    </div>
 
     <a-table
+        :sticky="stickyConfig"
         v-show="activeTab !== 'syslog'"
         :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: onSelectChange }"
         :loading="loading"
         :dataSource="dataSource"
         :columns="columns"
         :pagination="false"
-        :scroll="{ x: 'max-content' }"
+        :scroll="pagination.pageSize >= 100 ? { y: 'calc(100vh - 380px)', x: 'max-content' } : { x: 'max-content' }"
+        :virtual="pagination.pageSize >= 100"
         size="middle"
         :rowKey="(record) => record._id || record.id"
     >
@@ -265,7 +269,7 @@
         </template>
 
         <template v-else-if="column.key === 'host'">
-          <span>{{ record.ip }}:{{ record.port }}</span>
+          <span>{{ record.ip || record.host }}{{ record.port ? ':' + record.port : '' }}</span>
         </template>
         <template v-else-if="column.key === 'cert_detail'">
           <div v-if="record.cert" style="font-size: 13px; line-height: 1.8; color: var(--arl-text-color); padding: 12px 0;">
@@ -316,6 +320,31 @@
 
           </div>
           <span v-else>-</span>
+        </template>
+
+        <template v-else-if="column.key === 'change_status'">
+          <a-tag v-if="record.change_status === 'new' || activeTab === 'stat_finger'" color="green">新增</a-tag>
+          <a-popover v-else-if="record.change_status === 'update' && activeTab !== 'stat_finger'" placement="right">
+            <template #content>
+              <div style="margin-bottom: 8px; font-weight: bold; color: var(--arl-text-color); border-bottom: 1px solid var(--arl-border-color); padding-bottom: 4px;">关键变更预览：</div>
+              <div style="max-height: 200px; overflow-y: auto;">
+                <div v-for="(diff, field) in record.update_diff" :key="field" style="margin-bottom: 6px; font-size: 13px;">
+                  <span style="color: var(--arl-text-color); font-weight: 500; margin-right: 4px;">{{ fieldMap[field] || field }}:</span>
+                  <template v-if="formatDiffValue(diff.before) === '[长文本已折叠]' || formatDiffValue(diff.after) === '[长文本已折叠]'">
+                    <span style="color: #8c8c8c; font-style: italic;">[长文本内容变动]</span>
+                  </template>
+                  <template v-else>
+                    <span style="color: #ff4d4f; text-decoration: line-through;">{{ formatDiffValue(diff.before) }}</span>
+                    <span style="margin: 0 4px; color: #bfbfbf;">➔</span>
+                    <span style="color: #52c41a; font-weight: bold;">{{ formatDiffValue(diff.after) }}</span>
+                  </template>
+                </div>
+              </div>
+              <a style="display: block; margin-top: 12px; text-align: center; cursor: pointer; border-top: 1px dashed var(--arl-border-color); padding-top: 8px;" @click="openDiffModal(record)">🔍 点击查看完整明细差异</a>
+            </template>
+            <a-tag color="blue" style="cursor: help;">更新</a-tag>
+          </a-popover>
+          <span v-else style="color: rgba(255,255,255,0.25);">-</span>
         </template>
 
         <template v-else-if="column.key === 'ip_port'">
@@ -433,7 +462,7 @@
 
     <div v-if="tabConfig[activeTab] && activeTab !== 'syslog'" style="display: flex; justify-content: space-between; align-items: center; padding: 0 16px;">
       <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(pagination.total / pagination.pageSize) || 1 }} 页 / {{ pagination.total }} 条数据</div>
-      <a-pagination v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" @showSizeChange="handleTableChange" />
+      <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" @showSizeChange="handleTableChange" />
     </div>
 
     <div v-show="activeTab === 'syslog'">
@@ -495,20 +524,79 @@
       </a-form>
     </a-modal>
 
+    <a-modal v-model:open="diffModalVisible" title="更新差异明细" :footer="null" width="600px">
+      <div style="max-height: 500px; overflow-y: auto;">
+        <div v-for="(diff, field) in currentDiffData" :key="field" style="margin-bottom: 12px; border: 1px solid var(--arl-border-color); border-radius: 4px; padding: 12px; background: var(--arl-bg-light);">
+          <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px; border-bottom: 1px solid var(--arl-border-color); padding-bottom: 4px;">字段: {{ field }}</div>
+          <div style="color: #ff4d4f; word-break: break-all; font-family: monospace; line-height: 1.6; margin-bottom: 8px;">
+            <div style="font-weight: bold; margin-bottom: 4px;">- 旧值:</div>
+            <div style="white-space: pre-wrap; background: rgba(255, 77, 79, 0.1); padding: 8px; border-radius: 4px;">{{ diff.before ?? '空' }}</div>
+          </div>
+          <div style="color: #52c41a; word-break: break-all; font-family: monospace; line-height: 1.6;">
+            <div style="font-weight: bold; margin-bottom: 4px;">+ 新值:</div>
+            <div style="white-space: pre-wrap; background: rgba(82, 196, 26, 0.1); padding: 8px; border-radius: 4px;">{{ diff.after ?? '空' }}</div>
+          </div>
+        </div>
+      </div>
+    </a-modal>
+
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, reactive, watch, nextTick, computed, createVNode } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, onMounted, onUnmounted, reactive, watch, nextTick, computed, createVNode, ref as _ref_for_sticky } from 'vue';import { useRoute, useRouter } from 'vue-router';
 import request from '../utils/request';
 import { message, Modal } from 'ant-design-vue';
 import { SearchOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue';
 import CidrDetailModal from '../components/CidrDetailModal.vue';
+import { useSticky } from '../utils/useSticky';
+import { useGlobalPageSize } from '../utils/useGlobalPageSize';
+
+// 更新差异弹窗状态
+const diffModalVisible = ref(false);
+const currentDiffData = ref({});
+
+const openDiffModal = (record) => {
+  currentDiffData.value = record.update_diff || {};
+  diffModalVisible.value = true;
+};
+
+// 字段汉化映射
+const fieldMap = {
+  status_code: '状态码',
+  title: '标题',
+  content_length: '响应长度',
+  ip: 'IP地址',
+  port: '开放端口',
+  port_id: '开放端口',
+  product: '服务产品',
+  service_name: '服务名称',
+  vul_name: '漏洞名称',
+  vuln_name: '漏洞名称',
+  vul_category: '漏洞类别',
+  record: '解析记录',
+  type: '记录类型',
+  url: '链接',
+  domain: '域名',
+  os_info: '操作系统',
+  cdn_name: 'CDN',
+};
+
+const formatDiffValue = (val) => {
+  if (val === null || val === undefined) return '空';
+  let str = typeof val === 'object' ? JSON.stringify(val) : String(val);
+  if (str.length > 30) {
+    return '[长文本已折叠]';
+  }
+  return str;
+};
 
 const route = useRoute();
 const router = useRouter();
 const query = route?.query || {};
+
+const actionBarRef = _ref_for_sticky(null);
+const { stickyConfig } = useSticky(actionBarRef);
 
 // C段详情弹窗 (提取为组件)
 const cipDetailModalVisible = ref(false);
@@ -648,7 +736,12 @@ const hasSelected = computed(() => selectedRowKeys.value.length > 0);
 const onSelectChange = (keys) => { selectedRowKeys.value = keys; };
 
 const searchForm = ref({});
-const pagination = reactive({ current: 1, pageSize: 10, total: 0 });
+const globalPageSize = useGlobalPageSize(10);
+const pagination = reactive({ current: 1, pageSize: globalPageSize.value, total: 0 });
+
+watch(() => pagination.pageSize, (newSize) => {
+  globalPageSize.value = newSize;
+});
 
 // 💥 核心修改 3：在配置字典中加入 deleteUrl
 const tabConfig = reactive({
@@ -669,6 +762,7 @@ const tabConfig = reactive({
     // 💥 修复：删除了瞎加的 IP、端口和操作列，完全对齐原版站点表格！表格控制
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
+      { title: '变更状态', key: 'change_status', width: 100, align: 'center' },
       { title: '站点', key: 'site', width: 250 },
       { title: '状态码', dataIndex: 'status', key: 'status', width: 100, align: 'center' },
       { title: '标题', dataIndex: 'title', key: 'title', width: 200 },
@@ -692,6 +786,7 @@ const tabConfig = reactive({
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
+      { title: '变更状态', key: 'change_status', width: 100, align: 'center' },
       { title: '域名', dataIndex: 'domain', key: 'domain', width: 250 },
       { title: '解析类型', dataIndex: 'type', key: 'type', width: 120 },
       { title: '记录值', key: 'record', width: 300 },
@@ -728,6 +823,7 @@ const tabConfig = reactive({
     cols: [
       // ... 列配置保持不变 ...
       { title: '序号', key: 'index', width: 60, align: 'center' },
+      { title: '变更状态', key: 'change_status', width: 100, align: 'center' },
       { title: 'IP', dataIndex: 'ip', key: 'ip', width: 160 },
       { title: '操作系统', key: 'os_info', width: 150 },
       { title: '开放端口', key: 'port_info', width: 200 },
@@ -750,6 +846,7 @@ const tabConfig = reactive({
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
+      { title: '变更状态', key: 'change_status', width: 100, align: 'center' },
       { title: 'HOST', key: 'host', width: 180 },
       { title: 'CERT', key: 'cert_detail', width: 900 } // 留出巨大的空间给卡片
     ]
@@ -768,6 +865,7 @@ const tabConfig = reactive({
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
+      { title: '变更状态', key: 'change_status', width: 100, align: 'center' },
       { title: '服务', dataIndex: 'service_name', key: 'service_name', width: 150, align: 'center' },
       { title: 'IP端口', key: 'ip_port', width: 300 },
       { title: 'Product', key: 'product', width: 250 }
@@ -787,6 +885,7 @@ const tabConfig = reactive({
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
+      { title: '变更状态', key: 'change_status', width: 100, align: 'center' },
       { title: 'URL', key: 'fileleak_url', width: 500 }, // 用专属 key 渲染超链接
       { title: '标题', dataIndex: 'title', key: 'title', width: 250 },
       { title: '状态码', dataIndex: 'status_code', key: 'status_code', width: 100, align: 'center' },
@@ -828,6 +927,7 @@ const tabConfig = reactive({
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
+      { title: '变更状态', key: 'change_status', width: 100, align: 'center' },
       { title: 'URL', key: 'url_link', width: 450 }, // 专用 key 渲染超链接
       { title: '标题', dataIndex: 'title', key: 'title', width: 200 },
       { title: '状态码', dataIndex: 'status_code', key: 'status_code', width: 100, align: 'center' },
@@ -849,6 +949,7 @@ const tabConfig = reactive({
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
+      { title: '变更状态', key: 'change_status', width: 100, align: 'center' },
       { title: '漏洞名称', dataIndex: 'vul_name', key: 'vul_name', width: 250 },
       { title: '类别', dataIndex: 'vul_category', key: 'vul_category', width: 120 },
       { title: '应用名', dataIndex: 'app_name', key: 'app_name', width: 150 },
@@ -864,14 +965,15 @@ const tabConfig = reactive({
     deleteUrl: '/npoc_service/delete/',
     // 🚨 截图显示无导出按钮，不配置 exportUrl
     searchFields: [
-      { label: '协议', key: 'protocol', operator: '=' },
+      { label: '协议', key: 'scheme', operator: '=' },
       { label: '主机', key: 'host', operator: '=' },
       { label: '端口', key: 'port', operator: '=' },
       { label: '目标', key: 'target', operator: '=' }
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
-      { title: '协议', dataIndex: 'protocol', key: 'protocol', width: 150 },
+      { title: '变更状态', key: 'change_status', width: 100, align: 'center' },
+      { title: '协议', dataIndex: 'scheme', key: 'scheme', width: 150 },
       { title: '主机', dataIndex: 'host', key: 'host', width: 200 },
       { title: '端口', dataIndex: 'port', key: 'port', width: 100, align: 'center' },
       { title: '目标', dataIndex: 'target', key: 'target', width: 250 },
@@ -890,6 +992,7 @@ const tabConfig = reactive({
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
+      { title: '变更状态', key: 'change_status', width: 100, align: 'center' },
       { title: 'C段', dataIndex: 'cidr_ip', key: 'cidr_ip', width: 300 },
       { title: 'IP数', key: 'ip_count_col', width: 150, align: 'center' },
       { title: '域名数', key: 'domain_count_col', width: 150, align: 'center' }
@@ -909,6 +1012,7 @@ const tabConfig = reactive({
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
+      { title: '变更状态', key: 'change_status', width: 100, align: 'center' },
       { title: '模版ID', dataIndex: 'template_id', key: 'template_id', width: 180 },
       { title: '目标', dataIndex: 'target', key: 'target', width: 200 },
       { title: '漏洞URL', key: 'nuclei_vuln_url', width: 300 }, // 用专用 key 渲染超链接
@@ -935,6 +1039,7 @@ const tabConfig = reactive({
     ],
     cols: [
       { title: '序号', key: 'index', width: 80, align: 'center' },
+      { title: '变更状态', key: 'change_status', width: 100, align: 'center' },
       { title: 'finger', key: 'finger_name', width: 500 }, // 用专用 key 渲染青蓝字体
       { title: '数量', dataIndex: 'cnt', key: 'cnt', width: 200 }
     ]
@@ -960,6 +1065,7 @@ const tabConfig = reactive({
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
+      { title: '变更状态', key: 'change_status', width: 100, align: 'center' },
       { title: '记录类型', dataIndex: 'record_type', key: 'record_type', width: 120 },
       { title: '内容', dataIndex: 'content', key: 'content', width: 250 },
       { title: '来源 JS', key: 'wih_source', width: 450 },
@@ -978,6 +1084,7 @@ const tabConfig = reactive({
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
+      { title: '变更状态', key: 'change_status', width: 100, align: 'center' },
       { title: '级别', key: 'syslog_level', width: 100, align: 'center' },
       { title: '标题', dataIndex: 'title', key: 'title', width: 150 },
       { title: '记录时间', dataIndex: 'create_time', key: 'create_time', width: 180 },
@@ -1402,10 +1509,6 @@ const submitRiskTask = async () => {
   border-color: var(--arl-theme-color);
 }
 .mt5 { margin-top: 5px; }
-
-.search-row { display: flex; flex-wrap: wrap; gap: 16px 24px; }
-.search-item { display: flex; align-items: center; }
-.search-item .label { color: var(--arl-text-color); margin-right: 8px; min-width: 80px; text-align: right; }
 
 /* ================= Headers 样式 ================= */
 .scroll-x {

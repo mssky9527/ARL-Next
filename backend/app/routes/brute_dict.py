@@ -36,6 +36,12 @@ delete_fields = {
 }
 delete_parser = get_arl_parser(delete_fields, location='json')
 
+delete_file_fields = {
+    'name': fields.String(required=True, description="字典文件名")
+}
+delete_file_parser = get_arl_parser(delete_file_fields, location='json')
+
+
 
 def get_safe_dict_path(name):
     """防止目录穿越"""
@@ -149,7 +155,7 @@ class BruteDictAppend(Resource):
         """向字典追加条目（自动去重）"""
         args = append_parser.parse_args()
         name = args.get('name')
-        content = args.get('content', '')
+        content = args.get('content') or ''
 
         path = get_safe_dict_path(name)
         if not path:
@@ -196,7 +202,7 @@ class BruteDictDelete(Resource):
         """从字典中批量删除条目"""
         args = delete_parser.parse_args()
         name = args.get('name')
-        content = args.get('content', '')
+        content = args.get('content') or ''
 
         path = get_safe_dict_path(name)
         if not path:
@@ -230,3 +236,89 @@ class BruteDictDelete(Resource):
         except Exception as e:
             logger.error(f"Error deleting from brute dictionary {name}: {e}")
             return {'code': 500, 'message': str(e)}
+
+@ns.route('/delete_file')
+class BruteDictDeleteFile(Resource):
+    @auth
+    @ns.expect(delete_file_parser)
+    def post(self):
+        """删除字典文件"""
+        args = delete_file_parser.parse_args()
+        name = args.get('name')
+
+        path = get_safe_dict_path(name)
+        if not path:
+            return {'code': 404, 'message': '文件不合法或不存在'}
+
+        try:
+            os.remove(path)
+            return {'code': 200, 'message': 'success', 'data': {'name': name}}
+        except Exception as e:
+            logger.error(f"Error deleting brute dictionary file {name}: {e}")
+            return {'code': 500, 'message': str(e)}
+
+
+
+from werkzeug.datastructures import FileStorage
+from app.services.dict_upload import trigger_dict_upload_task
+from app.utils import conn_db as conn
+
+upload_parser = ns.parser()
+upload_parser.add_argument('file', location='files', type=FileStorage, required=True)
+upload_parser.add_argument('name', location='form', type=str, required=True, help="字典文件名")
+
+status_parser = ns.parser()
+status_parser.add_argument('task_id', location='args', type=str, required=True, help="上传任务ID")
+
+@ns.route('/upload_large')
+class BruteDictUploadLarge(Resource):
+    @auth
+    @ns.expect(upload_parser)
+    def post(self):
+        """异步超大字典上传与去重"""
+        args = upload_parser.parse_args()
+        name = args.get('name')
+        file_obj = args.get('file')
+        
+        if '..' in name or '/' in name or '\\' in name:
+            return {"code": 400, "message": "字典名称非法"}
+        
+        if not name.endswith('.txt'):
+            name += '.txt'
+            
+        path = os.path.join(BRUTE_DICT_DIR, name)
+            
+        if not file_obj or file_obj.filename == '':
+            return {"code": 400, "message": "未上传文件"}
+            
+        if not file_obj.filename.endswith('.txt'):
+            return {"code": 400, "message": "仅支持 .txt 格式文件"}
+            
+        # 保存到临时目录
+        tmp_dir = os.path.join(Config.basedir if hasattr(Config, 'basedir') else os.path.dirname(os.path.dirname(__file__)), 'tmp_upload')
+        os.makedirs(tmp_dir, exist_ok=True)
+        
+        import uuid
+        tmp_filename = f"{uuid.uuid4().hex}.txt"
+        tmp_path = os.path.join(tmp_dir, tmp_filename)
+        
+        file_obj.save(tmp_path)
+        
+        task_id = trigger_dict_upload_task(tmp_path, path)
+        return {"code": 200, "message": "success", "task_id": task_id}
+
+@ns.route('/upload_status')
+class BruteDictUploadStatus(Resource):
+    @auth
+    @ns.expect(status_parser)
+    def get(self):
+        """查询字典上传任务状态"""
+        args = status_parser.parse_args()
+        task_id = args.get('task_id')
+        
+        task_info = conn('dict_upload_task').find_one({"task_id": task_id}, {"_id": 0})
+        if not task_info:
+            return {"code": 404, "message": "任务不存在"}
+            
+        return {"code": 200, "message": "success", "data": task_info}
+

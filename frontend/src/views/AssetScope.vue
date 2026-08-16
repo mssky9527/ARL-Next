@@ -1,5 +1,7 @@
 <template>
   <div style="background-color: var(--arl-bg-layout); padding: 24px; min-height: calc(100vh - 64px);">
+    <div ref="actionBarRef" style="position: sticky; top: 0px; z-index: 10; background-color: var(--arl-bg-layout); margin: -24px -24px 16px -24px; padding: 24px 24px 16px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+
 
     <div style="margin-bottom: 24px;">
       <a-button type="primary" @click="openAddModal">新建资产分组</a-button>
@@ -27,6 +29,7 @@
     </div>
 
     <div style="margin-bottom: 16px; display: flex; gap: 8px;">
+      <a-button @click="resetSearch">清 除</a-button>
       <a-button :disabled="!hasSelected" @click="handleBatchDelete">批量删除</a-button>
       <a-dropdown :disabled="!hasSelected">
         <a-button>
@@ -43,7 +46,9 @@
       </a-dropdown>
     </div>
 
-    <a-table
+    
+    </div>
+<a-table :sticky="stickyConfig"
         :row-selection="{ selectedRowKeys: selectedRowKeys, onChange: onSelectChange }"
         :loading="loading"
         :dataSource="dataSource"
@@ -122,7 +127,7 @@
 
     <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0;">
       <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(pagination.total / pagination.pageSize) || 1 }} 页 / {{ pagination.total }} 条数据</div>
-      <a-pagination v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" @showSizeChange="handleTableChange" />
+      <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" @showSizeChange="handleTableChange" />
     </div>
 
     <a-modal
@@ -192,7 +197,13 @@
       </a-form>
     </a-modal>
 <!--添加监控任务-->
-    <a-modal v-model:open="addMonitorVisible" title="添加监控任务" @ok="submitAddMonitor" :confirmLoading="addMonitorLoading" width="520px" okText="确 定" cancelText="取 消" destroyOnClose>
+    <a-modal v-model:open="addMonitorVisible" @ok="submitAddMonitor" :confirmLoading="addMonitorLoading" width="520px" okText="确 定" cancelText="取 消" destroyOnClose>
+      <template #title>
+        添加监控任务
+        <a-tooltip title="将对资产组已发现域名与本次新发现域名取并集后执行策略，当前结果仅展示资产组的增量更新（新增及变动数据）。">
+          <QuestionCircleOutlined style="font-size: 14px; color: #8c8c8c; cursor: pointer; margin-left: 4px;" />
+        </a-tooltip>
+      </template>
       <a-form ref="addMonitorFormRef" :model="addMonitorForm" :rules="addMonitorRules" :label-col="{ span: 5 }" :wrapper-col="{ span: 18 }" style="margin-top: 20px;">
 
         <a-form-item label="范围" name="domains">
@@ -204,7 +215,14 @@
           </div>
         </a-form-item>
 
-        <a-form-item label="运行间隔" name="interval_hours">
+        <a-form-item label="任务类型" name="task_type">
+          <a-radio-group v-model:value="addMonitorForm.task_type">
+            <a-radio value="periodic">周期性监控</a-radio>
+            <a-radio value="oneshot">一次性扫描</a-radio>
+          </a-radio-group>
+        </a-form-item>
+
+        <a-form-item label="运行间隔" name="interval_hours" v-if="addMonitorForm.task_type === 'periodic'">
           <div style="display: flex; align-items: center; gap: 8px;">
             <a-input-number v-model:value="addMonitorForm.interval_hours" :min="1" style="width: 100%;" />
             <span>小时</span>
@@ -249,11 +267,17 @@
 </template>
 
 <script setup>
-import { ref, onMounted, reactive, computed, createVNode,watch } from 'vue';
+defineOptions({ name: 'AssetScope' });
+
+import { ref as _ref_for_sticky, ref, onMounted, reactive, computed, createVNode, watch, onActivated } from 'vue';import { useSticky } from '../utils/useSticky';
+const actionBarRef = _ref_for_sticky(null);
+const { stickyConfig } = useSticky(actionBarRef);
+
 import request from '../utils/request';
 import { message, Modal } from 'ant-design-vue';
-import { SearchOutlined, DownOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue';
+import { SearchOutlined, DownOutlined, ExclamationCircleOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useGlobalPageSize } from '../utils/useGlobalPageSize';
 
 
 const route = useRoute();
@@ -261,7 +285,12 @@ const router = useRouter();
 const loading = ref(false);
 const dataSource = ref([]);
 const searchForm = ref({});
-const pagination = reactive({ current: 1, pageSize: 10, total: 0 });
+const globalPageSize = useGlobalPageSize(10);
+const pagination = reactive({ current: 1, pageSize: globalPageSize.value, total: 0 });
+
+watch(() => pagination.pageSize, (newSize) => {
+  globalPageSize.value = newSize;
+});
 
 const selectedRowKeys = ref([]);
 const hasSelected = computed(() => selectedRowKeys.value.length > 0);
@@ -287,8 +316,10 @@ const copyText = async (text) => {
 };
 
 // 拉取表格数据
-const fetchData = async () => {
-  loading.value = true;
+const fetchData = async (silent = false) => {
+  if (!silent) {
+    loading.value = true;
+  }
   try {
     const params = { page: pagination.current, size: pagination.pageSize };
     for (const key in searchForm.value) {
@@ -303,11 +334,17 @@ const fetchData = async () => {
   } catch (error) {
     message.error('加载资产分组失败');
   } finally {
-    loading.value = false;
+    if (!silent) {
+      loading.value = false;
+    }
   }
 };
 
 const onSearch = () => { pagination.current = 1; fetchData(); };
+const resetSearch = () => {
+  searchForm.value = {};
+  onSearch();
+};
 const handleTableChange = (page, pageSize) => { pagination.current = page; pagination.pageSize = pageSize; fetchData(); };
 
 // ================= 新建资产分组逻辑 =================
@@ -503,12 +540,13 @@ const addMonitorLoading = ref(false);
 const addMonitorFormRef = ref();
 const policies = ref([]); // 存放策略列表
 
-// 🚨 初始表单：默认 24 小时，范围使用数组存储
-const addMonitorForm = reactive({ domains: [], interval_hours: 24, policy_id: undefined });
+// 🚨 初始表单：默认 24 小时，范围使用数组存储，新增 task_type 字段
+const addMonitorForm = reactive({ domains: [], interval_hours: 24, policy_id: undefined, task_type: 'periodic' });
 const addMonitorRules = {
   domains: [{ type: 'array', required: true, message: '请选择范围', trigger: 'change' }],
   interval_hours: [{ required: true, message: '请输入运行间隔', trigger: 'blur' }],
-  policy_id: [{ required: true, message: '请选择策略', trigger: 'change' }]
+  policy_id: [{ required: true, message: '请选择策略', trigger: 'change' }],
+  task_type: [{ required: true, message: '请选择任务类型', trigger: 'change' }]
 };
 
 // 1. 打开弹窗并预加载策略
@@ -517,6 +555,7 @@ const openAddMonitorModal = async (record) => {
   addMonitorForm.domains = [];
   addMonitorForm.interval_hours = 24; // 恢复默认值 24
   addMonitorForm.policy_id = undefined;
+  addMonitorForm.task_type = 'periodic'; // 默认周期性
   addMonitorVisible.value = true;
 
   // 避免重复请求，没数据才去拉取策略
@@ -533,7 +572,7 @@ const selectAllDomains = () => {
   }
 };
 
-// 3. 提交请求（含时间转换与状态码拦截）
+// 3. 提交请求（含时间转换与状态码拦截，及任务类型分支）
 const submitAddMonitor = async () => {
   try {
     await addMonitorFormRef.value.validate();
@@ -547,11 +586,21 @@ const submitAddMonitor = async () => {
       policy_id: addMonitorForm.policy_id,
       name: ''
     };
+    
+    // 如果是一次性任务，就不需要 interval
+    if (addMonitorForm.task_type === 'oneshot') {
+      delete payload.interval;
+    }
 
-    const res = await request.post('/scheduler/add/', payload);
+    const apiUrl = addMonitorForm.task_type === 'oneshot' ? '/scheduler/one_time_scan/' : '/scheduler/add/';
+    const res = await request.post(apiUrl, payload);
 
     if (res.code === 200) {
-      message.success('添加监控任务成功！');
+      // 提取后端返回的实际成功下发数量 (兼容 data 或 items 字段)
+      const successCount = (res.data || res.items || []).length;
+      const countMsg = successCount > 0 ? `，共成功下发 ${successCount} 个任务！` : '！';
+      
+      message.success(addMonitorForm.task_type === 'oneshot' ? `一次性监控任务下发成功${countMsg}` : `添加监控任务成功${countMsg}`);
       addMonitorVisible.value = false;
       // 监控任务创建后通常不需要刷新当前列表，去任务监控页看即可
     } else if (res.code === 699) {
@@ -672,7 +721,11 @@ watch(() => route.query.scope_id, (newScopeId) => {
 
 
 
-
+onActivated(() => {
+  if (route.path === '/group') {
+    fetchData(true);
+  }
+});
 
 </script>
 

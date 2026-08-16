@@ -100,13 +100,13 @@ class DeleteGithubScheduler(ARLResource):
 
         ret_data = {"_id": job_id_list}
 
-        for job_id in job_id_list:
-            item = github_task.find_github_scheduler(job_id)
+        for scheduler_id in job_id_list:
+            item = github_task.find_github_scheduler(scheduler_id)
             if not item:
                 return utils.build_ret(ErrorMsg.JobNotFound, ret_data)
 
-        for job_id in job_id_list:
-            github_task.delete_github_scheduler(job_id)
+        for scheduler_id in job_id_list:
+            github_task.delete_github_scheduler(scheduler_id)
 
         return utils.build_ret(ErrorMsg.Success, ret_data)
 
@@ -130,14 +130,14 @@ class UpdateGithubScheduler(ARLResource):
         修改 Github 监控任务
         """
         args = self.parse_args(update_github_scheduler_fields)
-        job_id = args.get("_id")
+        scheduler_id = args.get("_id")
         name = args.pop('name')
         keyword = args.pop('keyword')
         cron = args.pop('cron')
 
-        item = github_task.find_github_scheduler(job_id)
+        item = github_task.find_github_scheduler(scheduler_id)
         if not item:
-            return utils.build_ret(ErrorMsg.JobNotFound, {"_id": job_id})
+            return utils.build_ret(ErrorMsg.JobNotFound, {"_id": scheduler_id})
 
         if name:
             item["name"] = name
@@ -157,7 +157,7 @@ class UpdateGithubScheduler(ARLResource):
             item["cron"] = cron
 
         query = {
-            "_id": ObjectId(job_id)
+            "_id": ObjectId(scheduler_id)
         }
         utils.conn_db('github_scheduler').find_one_and_replace(query, item)
 
@@ -184,16 +184,16 @@ class RecoverGithubScheduler(ARLResource):
         args = self.parse_args(recover_github_scheduler_fields)
         job_id_list = args.get("_id")
 
-        for job_id in job_id_list:
-            item = github_task.find_github_scheduler(job_id)
+        for scheduler_id in job_id_list:
+            item = github_task.find_github_scheduler(scheduler_id)
             if not item:
-                return utils.build_ret(ErrorMsg.JobNotFound, {"_id": job_id})
+                return utils.build_ret(ErrorMsg.JobNotFound, {"_id": scheduler_id})
 
             status = item.get("status", SchedulerStatus.RUNNING)
             if status != SchedulerStatus.STOP:
-                return utils.build_ret(ErrorMsg.SchedulerStatusNotStop, {"_id": job_id})
+                return utils.build_ret(ErrorMsg.SchedulerStatusNotStop, {"_id": scheduler_id})
 
-            github_task.recover_task(_id=job_id)
+            github_task.recover_task(_id=scheduler_id)
 
         return utils.build_ret(ErrorMsg.Success, {"job_id_list": job_id_list})
 
@@ -216,15 +216,15 @@ class StopGithubScheduler(ARLResource):
         args = self.parse_args(stop_github_scheduler_fields)
         job_id_list = args.get("_id")
 
-        for job_id in job_id_list:
-            item = github_task.find_github_scheduler(job_id)
+        for scheduler_id in job_id_list:
+            item = github_task.find_github_scheduler(scheduler_id)
             if not item:
-                return utils.build_ret(ErrorMsg.JobNotFound, {"_id": job_id})
+                return utils.build_ret(ErrorMsg.JobNotFound, {"_id": scheduler_id})
 
             status = item.get("status", SchedulerStatus.RUNNING)
             if status != SchedulerStatus.RUNNING:
-                return utils.build_ret(ErrorMsg.SchedulerStatusNotRunning, {"_id": job_id})
+                return utils.build_ret(ErrorMsg.SchedulerStatusNotRunning, {"_id": scheduler_id})
 
-            github_task.stop_task(_id=job_id)
+            github_task.stop_task(_id=scheduler_id)
 
         return utils.build_ret(ErrorMsg.Success, {"job_id_list": job_id_list})

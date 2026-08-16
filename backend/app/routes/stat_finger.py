@@ -33,8 +33,19 @@ class ARLStatFingerprint(ARLResource):
         # 使用聚合管道来将同名指纹的 cnt 累加
         pipeline = [
             {"$match": query},
-            {"$group": {"_id": "$name", "cnt": {"$sum": "$cnt"}}},
-            {"$project": {"_id": 0, "name": "$_id", "cnt": 1}},
+            {"$group": {
+                "_id": "$name", 
+                "cnt": {"$sum": "$cnt"},
+                "change_status": {"$first": "$change_status"},
+                "update_diff": {"$first": "$update_diff"}
+            }},
+            {"$project": {
+                "_id": 0, 
+                "name": "$_id", 
+                "cnt": 1,
+                "change_status": 1,
+                "update_diff": 1
+            }},
             {"$sort": {"cnt": -1}},
             {"$skip": (args.page - 1) * args.size},
             {"$limit": args.size}

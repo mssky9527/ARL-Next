@@ -14,7 +14,6 @@ from app.helpers.domain import find_private_domain_by_task_id, find_public_ip_by
 from app.services.findVhost import find_vhost
 from app.services.dns_query import run_query_plugin
 from app.services.searchEngines import search_engines
-from app.services import domain_site_update
 
 logger = utils.get_logger()
 
@@ -31,7 +30,7 @@ class DomainBrute(object):
             wildcard_domain_ip = []
         self.base_domain = base_domain
         self.base_domain_scope = "." + base_domain.strip(".")
-        self.dicts = utils.load_file(word_file)
+        self.word_file = word_file
 
         self.brute_out = []
         self.resolver_map = {}
@@ -41,7 +40,8 @@ class DomainBrute(object):
         self.wildcard_domain_ip = wildcard_domain_ip  # 保存获取的泛解析IP
 
     def _brute_domain(self):
-        self.brute_out = services.mass_dns(self.base_domain, self.dicts, self.wildcard_domain_ip)
+        dicts_generator = utils.load_file_generator(self.word_file)
+        self.brute_out = services.mass_dns(self.base_domain, dicts_generator, self.wildcard_domain_ip)
 
     def _resolver(self):
         domains = []
@@ -94,7 +94,7 @@ class DomainBrute(object):
 
     def run(self):
         start_time = time.time()
-        logger.info("start brute {} with dict {}".format(self.base_domain, len(self.dicts)))
+        logger.info("start brute {} with generator dicts".format(self.base_domain))
         self._brute_domain()
         elapse = time.time() - start_time
         logger.info("end brute {}, result {}, elapse {}".format(self.base_domain,
@@ -136,7 +136,7 @@ class ScanPort(object):
 
         if option is None:
             option = {
-                "ports": get_scan_ports(ScanPortType.TEST),
+                "ports": get_scan_ports(ScanPortType.TOP100),
                 "service_detect": False,
                 "os_detect": False,
                 "port_parallelism": 32,
@@ -316,14 +316,15 @@ class FindSite(object):
 
 
 class AltDNS(object):
-    def __init__(self, domain_info_list, base_domain, wildcard_domain_ip=None):
+    def __init__(self, domain_info_list, base_domain, wildcard_domain_ip=None, alt_dns_dict=None):
         self.domain_info_list = domain_info_list
         self.base_domain = base_domain
+        self.wildcard_domain_ip = wildcard_domain_ip
+        self.alt_dns_dict = alt_dns_dict
         self.domains = []
         self.subdomains = []
         inner_dicts = "test adm admin api app beta demo dev front int internal intra ops pre pro prod qa sit staff stage test uat"
         self.dicts = inner_dicts.split()
-        self.wildcard_domain_ip = wildcard_domain_ip
 
     def _fetch_domains(self):
         base_len = len(self.base_domain)
@@ -354,7 +355,16 @@ class AltDNS(object):
     def _load_dict(self):
         """加载内部字典"""
         d = set()
-        for x in utils.load_file(Config.altdns_dict_path):
+        dict_path = Config.altdns_dict_path
+        if self.alt_dns_dict:
+            from app.utils import get_safe_dict_path
+            try:
+                dict_path = get_safe_dict_path(self.alt_dns_dict)
+            except Exception as e:
+                logger.error("加载 alt_dns_dict 失败: {}".format(e))
+                pass
+                
+        for x in utils.load_file_generator(dict_path):
             x = x.strip()
             if x:
                 d.add(x)
@@ -397,8 +407,8 @@ def find_site(ip_info_list):
     return f.run()
 
 
-def alt_dns(domain_info_list, base_domain, wildcard_domain_ip=None):
-    a = AltDNS(domain_info_list, base_domain, wildcard_domain_ip=wildcard_domain_ip)
+def alt_dns(domain_info_list, base_domain, wildcard_domain_ip=None, alt_dns_dict=None):
+    a = AltDNS(domain_info_list, base_domain, wildcard_domain_ip=wildcard_domain_ip, alt_dns_dict=alt_dns_dict)
     return a.run()
 
 
@@ -464,7 +474,6 @@ class DomainTask(CommonTask):
         self.wih_domain_set = set()  # 通过调用 WebInfoHunter 获取的域名集合
 
         scan_port_map = {
-            "test": ScanPortType.TEST,
             "top100": ScanPortType.TOP100,
             "top1000": ScanPortType.TOP1000,
             "all": ScanPortType.ALL,
@@ -472,11 +481,12 @@ class DomainTask(CommonTask):
         }
         option_scan_port_type = self.options.get("port_scan_type", "test")
         
-        # 兼容原本逻辑：如果是 custom 类型，用户传了自定义端口字符串，优先使用用户传的。否则用字典里的 custom 端口
         if option_scan_port_type == "custom" and self.options.get("port_custom"):
             actual_ports = self.options.get("port_custom")
+        elif option_scan_port_type.endswith(".txt"):
+            actual_ports = get_scan_ports(option_scan_port_type)
         else:
-            mapped_type = scan_port_map.get(option_scan_port_type, ScanPortType.TEST)
+            mapped_type = scan_port_map.get(option_scan_port_type, ScanPortType.TOP100)
             actual_ports = get_scan_ports(mapped_type)
 
         scan_port_option = {
@@ -501,12 +511,15 @@ class DomainTask(CommonTask):
     @property
     def domain_word_file(self) -> str:
         if self._domain_word_file is None:
-            brute_dict_map = {
-                "test": DomainDictType.TEST,
-                "big": DomainDictType.BIG
-            }
             domain_brute_type = self.options.get("domain_brute_type", "test")
-            domain_word_file = brute_dict_map.get(domain_brute_type, DomainDictType.TEST)
+            if domain_brute_type.endswith(".txt"):
+                from app.utils import get_safe_dict_path
+                domain_word_file = get_safe_dict_path(domain_brute_type)
+            else:
+                brute_dict_map = {
+                    "big": DomainDictType.BIG
+                }
+                domain_word_file = brute_dict_map.get(domain_brute_type, DomainDictType.BIG)
             self._domain_word_file = domain_word_file
 
         return self._domain_word_file
@@ -514,7 +527,10 @@ class DomainTask(CommonTask):
     @property
     def domain_dict_size(self):
         if self._domain_dict_size is None:
-            self._domain_dict_size = len(utils.load_file(self.domain_word_file))
+            count = 0
+            for _ in utils.load_file_generator(self.domain_word_file):
+                count += 1
+            self._domain_dict_size = count
 
         return self._domain_dict_size
 
@@ -640,7 +656,7 @@ class DomainTask(CommonTask):
         fake_info = modules.DomainInfo(**fake)
 
         logger.info("alt_dns_current {}, primary_domain:{}".format(self.base_domain, primary_domain))
-        data = alt_dns([fake_info], primary_domain, wildcard_domain_ip=self.not_found_domain_ips)
+        data = alt_dns([fake_info], primary_domain, wildcard_domain_ip=self.not_found_domain_ips, alt_dns_dict=self.options.get("alt_dns_dict"))
 
         return data
 
@@ -656,7 +672,7 @@ class DomainTask(CommonTask):
 
         alt_dns_current_out = self.alt_dns_current()
 
-        alt_dns_out = alt_dns(self.domain_info_list, self.base_domain, wildcard_domain_ip=self.not_found_domain_ips)
+        alt_dns_out = alt_dns(self.domain_info_list, self.base_domain, wildcard_domain_ip=self.not_found_domain_ips, alt_dns_dict=self.options.get("alt_dns_dict"))
 
         alt_dns_out.extend(alt_dns_current_out)
         # 没有结果，直接返回
@@ -836,10 +852,8 @@ class DomainTask(CommonTask):
         '''****域名爆破开始****'''
         if self.options.get("domain_brute"):
             self.update_task_field("status", "domain_brute")
-            t1 = time.time()
-            self.domain_brute()
-            elapse = time.time() - t1
-            self.update_services("domain_brute", elapse)
+            with self.safe_phase("domain_brute", self.base_update_task):
+                self.domain_brute()
         else:
             domain_info = self.build_single_domain_info(self.base_domain)
             if domain_info:
@@ -852,25 +866,19 @@ class DomainTask(CommonTask):
         # ***域名插件查询****
         if self.options.get("dns_query_plugin"):
             self.update_task_field("status", "dns_query_plugin")
-            t1 = time.time()
-            self.dns_query_plugin()
-            elapse = time.time() - t1
-            self.update_services("dns_query_plugin", elapse)
+            with self.safe_phase("dns_query_plugin", self.base_update_task):
+                self.dns_query_plugin()
 
         if self.options.get("arl_search"):
             self.update_task_field("status", "arl_search")
-            t1 = time.time()
-            self.arl_search()
-            elapse = time.time() - t1
-            self.update_services("arl_search", elapse)
+            with self.safe_phase("arl_search", self.base_update_task):
+                self.arl_search()
 
         '''***智能域名生成****'''
         if self.options.get("alt_dns"):
             self.update_task_field("status", "alt_dns")
-            t1 = time.time()
-            self.alt_dns()
-            elapse = time.time() - t1
-            self.update_services("alt_dns", elapse)
+            with self.safe_phase("alt_dns", self.base_update_task):
+                self.alt_dns()
 
     def start_ip_fetch(self):
         self.gen_ipv4_map()
@@ -878,18 +886,14 @@ class DomainTask(CommonTask):
         '''***端口扫描开始***'''
         if self.options.get("port_scan"):
             self.update_task_field("status", "port_scan")
-            t1 = time.time()
-            self.port_scan()
-            elapse = time.time() - t1
-            self.update_services("port_scan", elapse)
+            with self.safe_phase("port_scan", self.base_update_task):
+                self.port_scan()
 
         '''***证书获取***'''
         if self.options.get("ssl_cert"):
             self.update_task_field("status", "ssl_cert")
-            t1 = time.time()
-            self.ssl_cert()
-            elapse = time.time() - t1
-            self.update_services("ssl_cert", elapse)
+            with self.safe_phase("ssl_cert", self.base_update_task):
+                self.ssl_cert()
 
         # 服务信息存储
         if self.options.get("service_detection"):
@@ -898,10 +902,8 @@ class DomainTask(CommonTask):
 
     def start_site_fetch(self):
         self.update_task_field("status", "find_site")
-        t1 = time.time()
-        self.find_site()
-        elapse = time.time() - t1
-        self.update_services("find_site", elapse)
+        with self.safe_phase("find_site", self.base_update_task):
+            self.find_site()
 
         # 对 domain_info_list 进行清空，回收内存
         self.domain_info_list = []
@@ -937,26 +939,17 @@ class DomainTask(CommonTask):
         """服务识别（python）实现"""
         if self.options.get("npoc_service_detection"):
             self.update_task_field("status", "npoc_service_detection")
-            t1 = time.time()
             self.npoc_service_detection()
-            elapse = time.time() - t1
-            self.update_services("npoc_service_detection", elapse)
 
         """ *** npoc 调用 """
         if self.options.get("poc_config"):
             self.update_task_field("status", "poc_run")
-            t1 = time.time()
             self.web_site_fetch.risk_cruising(self.npoc_service_target_set)
-            elapse = time.time() - t1
-            self.update_services("poc_run", elapse)
 
         """弱口令爆破服务"""
         if self.options.get("brute_config"):
             self.update_task_field("status", "weak_brute")
-            t1 = time.time()
             self.brute_config()
-            elapse = time.time() - t1
-            self.update_services("weak_brute", elapse)
 
     def brute_config(self):
         plugins = []
@@ -974,6 +967,10 @@ class DomainTask(CommonTask):
         for item in result:
             item["task_id"] = self.task_id
             item["save_date"] = utils.curr_date()
+            if "plg_name" in item:
+                item["plugin_name"] = item.get("plg_name")
+            if "target" in item:
+                item["vuln_url"] = item.get("target")
             utils.safe_insert_asset('vuln', ['task_id', 'vuln_url', 'plugin_name'], item)
 
     def find_vhost_vuln(self):
@@ -997,15 +994,14 @@ class DomainTask(CommonTask):
             save_item["verify_obj"] = result
             save_item["task_id"] = self.task_id
             save_item["save_date"] = utils.curr_date()
+            save_item["plugin_name"] = save_item["plg_name"]
+            save_item["vuln_url"] = save_item["target"]
             utils.safe_insert_asset('vuln', ['task_id', 'vuln_url', 'plugin_name'], save_item)
 
     def start_find_vhost(self):
         if self.options.get("findvhost"):
-            self.update_task_field("status", "findvhost")
-            t1 = time.time()
+            self.update_task_field("status", "find_vhost")
             self.find_vhost_vuln()
-            elapse = time.time() - t1
-            self.update_services("findvhost", elapse)
 
     # 搜索引擎调用
     def search_engines(self):
@@ -1082,7 +1078,7 @@ class DomainTask(CommonTask):
             logger.info("wih_domain_update iteration {} found {} new domains".format(iteration, len(new_domains)))
             
             domain_info_list = self.build_domain_info(new_domains)
-            if self.task_tag == "task":
+            if self.task_tag in ["task", "monitor"]:
                 domain_info_list = self.clear_domain_info_by_record(domain_info_list)
                 self.save_domain_info_list(domain_info_list, source="wih")
             
@@ -1112,25 +1108,44 @@ class DomainTask(CommonTask):
         self.update_services("wih_domain_update", elapse)
 
     def run(self):
+        base_update = self.base_update_task
         self.update_task_field("start_time", utils.curr_date())
 
         self.domain_fetch()
 
         # 搜索引擎调用
-        self.search_engines()
+        with self.safe_phase("search_engines", base_update):
+            self.search_engines()
 
         self.start_ip_fetch()
 
         self.start_site_fetch()
 
-        self.process_wih_domains()
+        with self.safe_phase("process_wih_domains", base_update):
+            self.process_wih_domains()
 
-        self.start_find_vhost()
+        if self.options.get("findvhost"):
+            with self.safe_phase("find_vhost", base_update):
+                self.start_find_vhost()
 
-        self.start_poc_run()
+        if self.options.get("npoc_service_detection") or self.options.get("poc_config") or self.options.get("brute_config"):
+            with self.safe_phase("poc_run", base_update):
+                self.start_poc_run()
+            
+        if self.options.get("file_leak"):
+            with self.safe_phase("file_leak", base_update):
+                if hasattr(self, 'web_site_fetch') and self.web_site_fetch:
+                    self.web_site_fetch.run_func("file_leak", self.web_site_fetch.file_leak)
+
+        # nuclei_scan 放在最后执行，防止高并发扫描把目标打挂或者触发IP封禁
+        if self.options.get("nuclei_scan"):
+            with self.safe_phase("nuclei_scan", base_update):
+                if hasattr(self, 'web_site_fetch') and self.web_site_fetch:
+                    self.web_site_fetch.run_func("nuclei_scan", self.web_site_fetch.nuclei_scan)
 
         # 执行统计和同步操作
-        self.common_run()
+        with self.safe_phase("common_run", base_update):
+            self.common_run()
 
         self.update_task_field("status", TaskStatus.DONE)
         self.update_task_field("end_time", utils.curr_date())

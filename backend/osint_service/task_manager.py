@@ -10,6 +10,36 @@ import sys
 from mlog import logger
 
 
+class DynamicSemaphore:
+    def __init__(self, limit: int):
+        self._limit = limit
+        self._current = 0
+        self._cond = asyncio.Condition()
+
+    async def acquire(self):
+        async with self._cond:
+            while self._current >= self._limit:
+                await self._cond.wait()
+            self._current += 1
+
+    async def release(self):
+        async with self._cond:
+            self._current -= 1
+            self._cond.notify(1)
+
+    async def set_limit(self, new_limit: int):
+        async with self._cond:
+            if new_limit != self._limit:
+                self._limit = new_limit
+                self._cond.notify_all()
+                
+    async def __aenter__(self):
+        await self.acquire()
+        return None
+
+    async def __aexit__(self, exc_type, exc, tb):
+        await self.release()
+
 class TaskManager:
     """全局任务管理器"""
     def __init__(self):
@@ -32,10 +62,13 @@ class TaskManager:
                 task.cancel()
             del self._tasks[task_name]
             
-    def get_semaphore(self, name, limit):
+    def get_semaphore(self, name, limit, dynamic=False):
         """获取信号量"""
         if name not in self._semaphores:
-            self._semaphores[name] = asyncio.Semaphore(limit)
+            if dynamic:
+                self._semaphores[name] = DynamicSemaphore(limit)
+            else:
+                self._semaphores[name] = asyncio.Semaphore(limit)
         return self._semaphores[name]
 
 

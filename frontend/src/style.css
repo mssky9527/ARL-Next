@@ -71,7 +71,7 @@ strong, b, .ant-typography strong {
 html[data-theme="dark"] .ant-card, 
 html[data-theme="dark"] .ant-table,
 html[data-theme="dark"] .ant-menu {
-    border-color: #303030 !important;
+    border-color: #333333 !important;
 }
 
 /* =========================================================
@@ -93,28 +93,24 @@ html[data-theme="dark"] .ant-menu {
     box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.08) !important;
 }
 
-/* 暗黑模式阴影：因为背景深，需要加重阴影透明度才能有立体感，同时卡片颜色比底色浅 */
-html[data-theme="dark"] .ant-card,
-body[style*="background-color: rgb(15, 23, 42)"] .ant-card,
-body[style*="background-color: #0f172a"] .ant-card {
-    border: 1px solid #1e293b !important;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2) !important;
+/* 暗黑模式卡片：Vercel 极简风，纯黑底色上的极深灰卡片，极细暗纹边框 */
+body.dark-mode .ant-card {
+    border: 1px solid #333333 !important;
+    box-shadow: none !important; /* 默认无明显阴影，极致扁平 */
 }
-html[data-theme="dark"] .ant-card:hover,
-body[style*="background-color: rgb(15, 23, 42)"] .ant-card:hover,
-body[style*="background-color: #0f172a"] .ant-card:hover {
-    box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.4) !important;
-    border-color: var(--arl-theme-color) !important;
+body.dark-mode .ant-card:hover {
+    box-shadow: 0 0 0 1px #444444, 0 8px 30px rgba(0, 0, 0, 0.8) !important; /* 悬浮微光与加深弥散阴影 */
+    border-color: #444444 !important;
 }
 
-/* 统一暗黑模式的表格和悬浮背景为高级深蓝灰，调整得更深邃以显得更干净 */
+/* 统一暗黑模式的表格和悬浮背景为中性冷淡风深灰，彻底剥离主题色 */
 body.dark-mode .ant-table-wrapper .ant-table-tbody > tr:hover > td,
 body.dark-mode .ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td,
 body.dark-mode .ant-table-wrapper .ant-table-tbody > tr.ant-table-row-hover > td {
-    background: color-mix(in srgb, var(--arl-theme-color) 15%, #0f172a) !important;
+    background: #1a1a1a !important;
 }
 body.dark-mode .ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected > td {
-    background: color-mix(in srgb, var(--arl-theme-color) 10%, #0f172a) !important;
+    background: #222222 !important;
 }
 
 /* 4. 彻底接管 Ant Design 布局和菜单背景 */
@@ -122,7 +118,7 @@ body.dark-mode .ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected >
     background: var(--arl-bg-layout) !important;
 }
 .ant-menu-dark, .ant-menu-dark .ant-menu-sub {
-    background: #0b1120 !important;
+    background: #000000 !important;
 }
 
 /* 5. 全局文本选中颜色优化，跟随主题色 */
@@ -174,10 +170,10 @@ body.dark-mode .ant-table-wrapper .ant-table-tbody > tr.ant-table-row-selected >
 
 /* 暗黑模式下稍微加深阴影透明度以确保立体感，同时保持无生硬边框的极简设计 */
 body.dark-mode .ant-table .ant-table-cell-fix-right {
-    box-shadow: -4px 0 16px -6px rgba(0, 0, 0, 0.3) !important;
+    box-shadow: -4px 0 16px -6px rgba(0, 0, 0, 0.8) !important;
 }
 body.dark-mode .ant-table .ant-table-cell-fix-left {
-    box-shadow: 4px 0 16px -6px rgba(0, 0, 0, 0.3) !important;
+    box-shadow: 4px 0 16px -6px rgba(0, 0, 0, 0.8) !important;
 }
 
 /* 确保固定列悬浮和选中时，毛玻璃效果仍然生效，并融合主题色 */
@@ -193,7 +189,7 @@ body.dark-mode .ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td
 body.dark-mode .ant-table-wrapper .ant-table-tbody > tr.ant-table-row:hover > td.ant-table-cell-fix-left,
 body.dark-mode .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right,
 body.dark-mode .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-left {
-    /* 保持与整体统一的深度背景混合，保留通透感 */
-    background: color-mix(in srgb, var(--arl-theme-color) 12%, rgba(30, 41, 59, 0.85)) !important;
+    /* 极致纯黑冷淡风，悬浮时使用纯灰半透明底色 */
+    background: rgba(26, 26, 26, 0.85) !important;
     backdrop-filter: blur(12px) !important;
 }

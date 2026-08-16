@@ -1,11 +1,9 @@
 import os
 import re
 import time
-import json
 import base64
 import requests
 from app import utils
-from app.config import Config
 from .baseThread import BaseThread
 logger = utils.get_logger()
 

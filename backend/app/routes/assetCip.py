@@ -1,6 +1,6 @@
 from bson import ObjectId
 import re
-from flask_restx import Resource, reqparse, fields, Namespace
+from flask_restx import fields, Namespace
 from app.utils import get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser
 from app.modules import ErrorMsg
@@ -14,6 +14,10 @@ base_search_fields = {
     'cidr_ip': fields.String(required=False, description="C段"),
     "ip_count": fields.Integer(description="IP 个数"),
     "domain_count": fields.Integer(description="解析到该 C 段域名个数"),
+    "update_date__dgt": fields.String(description="更新时间大于"),
+    "update_date__dlt": fields.String(description="更新时间小于"),
+    "insert_time__dgt": fields.String(description="插入时间大于"),
+    "insert_time__dlt": fields.String(description="插入时间小于"),
     "scope_id": fields.String(description="资产范围ID")
 }
 
@@ -148,47 +152,72 @@ class ARLAssetCipIPDomainDetail(ARLResource):
         cidr_id = args.get("cidr_id")
         if not cidr_id:
             return utils.build_ret(ErrorMsg.ArgsError, {"error": "Missing cidr_id"})
-            
-        # 1. 优先尝试从 asset_cip 找 (资产组场景)
-        collection_type = "asset"
-        cip_doc = utils.conn_db('asset_cip').find_one({'_id': ObjectId(cidr_id)})
+
+        ip_list = []
+        query = {}
+        ip_collection_name = 'ip'
+        collection_type = "unknown"
         
-        # 2. 如果没找到，尝试从 cip 找 (任务详情场景)
-        if not cip_doc:
-            cip_doc = utils.conn_db('cip').find_one({'_id': ObjectId(cidr_id)})
-            collection_type = "task"
+        # 1. 尝试判定是否为单个任务或资产组的合规 ObjectId
+        if ObjectId.is_valid(cidr_id):
+            collection_type = "asset"
+            cip_doc = utils.conn_db('asset_cip').find_one({'_id': ObjectId(cidr_id)})
             
-        if not cip_doc:
-            return {"code": 200, "message": f"C段未找到(cidr_id={cidr_id})", "data": {"items": []}}
+            if not cip_doc:
+                cip_doc = utils.conn_db('cip').find_one({'_id': ObjectId(cidr_id)})
+                collection_type = "task"
+                
+            if not cip_doc:
+                return {"code": 200, "message": f"C段未找到(cidr_id={cidr_id})", "data": {"items": []}}
+                
+            ip_list = cip_doc.get("ip_list", [])
+            scope_id = cip_doc.get("scope_id", "")
+            task_id = cip_doc.get("task_id", "")
             
-        ip_list = cip_doc.get("ip_list", [])
-        scope_id = cip_doc.get("scope_id", "")
-        task_id = cip_doc.get("task_id", "")
-        
-        # 3. 确定该去哪个表查 IP
-        # 如果是资产组场景，去 asset_ip 查；如果是任务场景，去 ip 查
-        ip_collection_name = 'asset_ip' if collection_type == "asset" else 'ip'
-        
-        # 从对应的表里查出这些 IP 关联的域名
-        query = {"ip": {"$in": ip_list}}
-        if collection_type == "asset" and scope_id:
-            query["scope_id"] = scope_id
-        elif collection_type == "task" and task_id:
-            query["task_id"] = task_id
+            ip_collection_name = 'asset_ip' if collection_type == "asset" else 'ip'
+            query = {"ip": {"$in": ip_list}}
+            if collection_type == "asset" and scope_id:
+                query["scope_id"] = scope_id
+            elif collection_type == "task" and task_id:
+                query["task_id"] = task_id
+        else:
+            # 2. 全局搜索传过来的是真实 C段字符串 (如: 192.168.1.0/24)
+            collection_type = "global"
+            cip_docs = list(utils.conn_db('cip').find({'cidr_ip': cidr_id}))
+            if not cip_docs:
+                return {"code": 200, "message": f"全局C段未找到(cidr_ip={cidr_id})", "data": {"items": []}}
             
+            merged_ip_set = set()
+            for doc in cip_docs:
+                merged_ip_set.update(doc.get("ip_list", []))
+            
+            ip_list = list(merged_ip_set)
+            ip_collection_name = 'ip'
+            query = {"ip": {"$in": ip_list}}
+            
+        # 3. 从对应的表里查出这些 IP 关联的域名
         ip_docs = list(utils.conn_db(ip_collection_name).find(query, {"ip": 1, "domain": 1, "_id": 0}))
         
-        # 整理成字典，方便前端展示
+        # 4. 组装结果并深度去重
         result_items = []
-        
-        # 如果依然为空，把调试信息直接打在 message 里，方便查明真相
         debug_msg = "success"
         if len(ip_docs) == 0:
             debug_msg = f"未找到IP记录(类型:{collection_type})。ip数={len(ip_list)}, 表={ip_collection_name}, 条件={query}"
+            
+        ip_domain_map = {}
         for doc in ip_docs:
+            ip = doc.get("ip")
+            domains = doc.get("domain", [])
+            if not isinstance(domains, list):
+                domains = []
+            if ip not in ip_domain_map:
+                ip_domain_map[ip] = set()
+            ip_domain_map[ip].update(domains)
+            
+        for ip, domains_set in ip_domain_map.items():
             result_items.append({
-                "ip": doc.get("ip"),
-                "domains": doc.get("domain", [])
+                "ip": ip,
+                "domains": list(domains_set)
             })
             
         return {"code": 200, "message": debug_msg, "data": {"items": result_items}}

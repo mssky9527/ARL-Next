@@ -5,6 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from .tyc_async import AsyncTycClient
 import re
+import random
 
 logger = logging.getLogger(__name__)
 MONGO_URI = "mongodb://admin:admin@mongodb:27017/?authSource=admin"
@@ -17,7 +18,7 @@ def curr_date():
 
 async def run_recon_job(options):
     logger.info(f"Entering run_recon_job with options: {options}")
-    task_id = options.get("task_id")
+    options.get("task_id")
     recon_type = options.get("type", "tyc")
     if recon_type == "tyc":
         await run_tyc_job(options)
@@ -79,7 +80,10 @@ async def run_icp_job(options):
 
     await insert_syslog("info", "ICP查询", f"任务开始运行，目标: {target}，类型: {query_types}")
 
-    for qt in query_types:
+    for idx, qt in enumerate(query_types):
+        if idx > 0:
+            await asyncio.sleep(random.uniform(2.0, 5.0))
+            
         if qt in handlers:
             try:
                 await insert_syslog("info", f"{qt}查询", f"开始获取 {qt} 资产数据...")
@@ -126,6 +130,7 @@ async def run_tyc_job(options):
     task_id = options.get("task_id")
     gid = options.get("gid")
     depth = options.get("depth", 1)
+    invest_ratio = options.get("invest_ratio", 0)
     query_types = options.get("query_type", [])
     tyc_id = options.get("tyc_id")
     tyc_token = options.get("tyc_token")
@@ -163,46 +168,98 @@ async def run_tyc_job(options):
             "trademark_cnt": 0
         }}})
 
-    await insert_syslog("info", "TYC查询", f"任务开始运行，目标: {tyc_id}，深度: {depth}")
+    type_map = {
+        "invest": "对外投资",
+        "trademark": "商标信息",
+        "web": "备案网站",
+        "app": "APP",
+        "mapp": "小程序",
+        "wechat": "微信公众号",
+        "weibo": "微博"
+    }
+    modules_str = ",".join([type_map.get(qt, qt) for qt in query_types])
+    ratio_str = f"{invest_ratio}%" if invest_ratio and float(invest_ratio) > 0 else "无限制"
+    config_msg = f"任务开始运行，配置如下：目标(GID): {gid}，查询层数: {depth}，最低投资比例: {ratio_str}，需查询模块: {modules_str}"
+    await insert_syslog("info", "TYC查询", config_msg)
 
     client = AsyncTycClient(gid=tyc_id, token=tyc_token)
     gids_to_query = [gid]
     for level in range(depth):
         await insert_syslog("info", "TYC查询", f"开始执行第 {level + 1} 层穿透查询，共 {len(gids_to_query)} 个目标...")
         next_gids = []
-        for current_gid in gids_to_query:
+        for idx, current_gid in enumerate(gids_to_query):
+            # 在抓取每家公司前检查任务是否被中止
+            task_info = await db['icp_task'].find_one({"_id": ObjectId(task_id)}, {"status": 1})
+            if task_info and task_info.get("status") == "stop":
+                await insert_syslog("warning", "任务中止", "检测到任务已被手动停止，退出执行流程。")
+                logger.info(f"Task {task_id} manually stopped.")
+                return
+
+            if idx > 0:
+                await asyncio.sleep(random.uniform(5.0, 8.0))
+                
             # 股权穿透 (投资)
             if "invest" in query_types:
+                await asyncio.sleep(random.uniform(2.0, 5.0))
                 try:
                     await insert_syslog("info", "投资查询", f"正在查询目标 {current_gid} 的对外投资...")
                     invest_list = await client.get_invest_list(current_gid)
                     if invest_list:
+                        passed_count = 0
+                        dropped_count = 0
+                        default_pass_names = []
+
                         for item in invest_list:
                             item['task_id'] = task_id
                             item['query_type'] = 'invest'
                             
                             pct = item.get("percent")
+                            percent_num = None
                             if pct and isinstance(pct, str):
                                 try:
-                                    item['percent_num'] = float(pct.replace("%", "").strip())
+                                    percent_num = float(pct.replace("%", "").strip())
+                                    item['percent_num'] = percent_num
                                 except ValueError:
                                     pass
                             
-                            rc = item.get("regCapital")
+                            rc = item.get("amount")
                             if rc and isinstance(rc, str):
                                 m = re.search(r"(\d+(\.\d+)?)", rc.replace(",", ""))
                                 if m:
                                     try:
-                                        item['regCapital_num'] = float(m.group(1))
+                                        item['amount_num'] = float(m.group(1))
                                     except ValueError:
                                         pass
                                         
-                            await db['icp_asset'].insert_one(item)
-                            next_gids.append(item.get("id"))
-                        counts["invest"] += len(invest_list)
-                        total_assets += len(invest_list)
+                            # 判定是否达标
+                            is_passed = True
+                            is_default_pass = False
+                            
+                            if invest_ratio and float(invest_ratio) > 0:
+                                if percent_num is not None:
+                                    if percent_num < float(invest_ratio):
+                                        is_passed = False
+                                else:
+                                    is_default_pass = True
+                                    
+                            if is_passed:
+                                await db['icp_asset'].insert_one(item)
+                                next_gids.append(item.get("id"))
+                                passed_count += 1
+                                if is_default_pass:
+                                    # 尝试获取公司名称记录日志
+                                    cname = item.get("name", item.get("id", "未知公司"))
+                                    default_pass_names.append(cname)
+                            else:
+                                dropped_count += 1
+                                
+                        counts["invest"] += passed_count
+                        total_assets += passed_count
                         await update_stats()
-                        await insert_syslog("info", "投资查询", f"目标 {current_gid} 投资查询完成，新增 {len(invest_list)} 条记录")
+                        
+                        await insert_syslog("info", "投资查询", f"目标 {current_gid} 投资查询完成，共发现 {len(invest_list)} 家对外投资，其中 {passed_count} 家达标(入库并递归)，{dropped_count} 家因比例不足被丢弃。")
+                        if default_pass_names:
+                            await insert_syslog("info", "投资查询", f"目标 {current_gid} 的以下子公司因无具体投资比例数据，默认放行: {', '.join(default_pass_names)}")
                 except Exception as e:
                     logger.error(f"TYC Query exception for invest: {e}")
                     error_msg.append(f"invest error: {str(e)}")
@@ -210,6 +267,7 @@ async def run_tyc_job(options):
             
             # 网站备案
             if "web" in query_types:
+                await asyncio.sleep(random.uniform(2.0, 5.0))
                 try:
                     await insert_syslog("info", "网站查询", f"正在查询目标 {current_gid} 的网站备案...")
                     web_list = await client.get_icp_record_list(current_gid)
@@ -229,6 +287,7 @@ async def run_tyc_job(options):
                     
             # App查询
             if "app" in query_types:
+                await asyncio.sleep(random.uniform(2.0, 5.0))
                 try:
                     await insert_syslog("info", "APP查询", f"正在查询目标 {current_gid} 的APP...")
                     app_list = await client.get_app_list(current_gid)
@@ -248,6 +307,7 @@ async def run_tyc_job(options):
                     
             # 微信公众号
             if "wechat" in query_types:
+                await asyncio.sleep(random.uniform(2.0, 5.0))
                 try:
                     await insert_syslog("info", "微信查询", f"正在查询目标 {current_gid} 的微信公众号...")
                     wechat_list = await client.get_wechat_list(current_gid)
@@ -267,6 +327,7 @@ async def run_tyc_job(options):
                     
             # 微博
             if "weibo" in query_types:
+                await asyncio.sleep(random.uniform(2.0, 5.0))
                 try:
                     await insert_syslog("info", "微博查询", f"正在查询目标 {current_gid} 的微博...")
                     weibo_list = await client.get_weibo_list(current_gid)
@@ -286,6 +347,7 @@ async def run_tyc_job(options):
                     
             # 微信小程序
             if "mapp" in query_types:
+                await asyncio.sleep(random.uniform(2.0, 5.0))
                 try:
                     await insert_syslog("info", "小程序查询", f"正在查询目标 {current_gid} 的小程序...")
                     mapp_list = await client.get_mini_program_list(current_gid)

@@ -39,11 +39,11 @@ def setup_task_context(task_id, task, args, kwargs, **kw):
         business_task_id = "global"
         if isinstance(options, dict):
             if "data" in options:
-                business_task_id = options["data"].get("task_id") or options["data"].get("job_id", "global")
+                business_task_id = options["data"].get("task_id") or options["data"].get("scheduler_id", "global")
             elif "task_id" in options:
                 business_task_id = options.get("task_id", "global")
-            elif "job_id" in options:
-                business_task_id = options.get("job_id", "global")
+            elif "scheduler_id" in options:
+                business_task_id = options.get("scheduler_id", "global")
                 
         token = arl_task_id_var.set(business_task_id)
         _token_local.token = token
@@ -97,13 +97,26 @@ def run_task(options):
         CeleryAction.ASSET_SITE_UPDATE: asset_site_update,
         CeleryAction.ADD_ASSET_SITE_TASK: asset_site_add_task,
         CeleryAction.ASSET_WIH_UPDATE: asset_wih_update_task,
+        CeleryAction.ONESHOT_DOMAIN_EXEC_TASK: oneshot_domain_exec,
+        CeleryAction.ONESHOT_IP_EXEC_TASK: oneshot_ip_exec,
     }
     start_time = time.time()
     # 这里监控任务 task_id 和 target 是空的
     logger.info("run_task action:{} time: {}".format(action, start_time))
     logger.info("name:{}, target:{}, task_id:{}".format(
         data.get("name"), data.get("target"), data.get("task_id")))
-        
+
+    task_options = data.get("options", {})
+    if task_options:
+        active_opts = []
+        for k, v in task_options.items():
+            if v is True:
+                active_opts.append(f"已开启 {k}")
+            elif isinstance(v, str) and v:
+                active_opts.append(f"{k}: {v}")
+        if active_opts:
+            logger.info(f"任务配置: {', '.join(active_opts)}")
+            
     task_id = data.get("task_id")
     if task_id:
         try:
@@ -148,28 +161,26 @@ def arl_github(options):
     run_task(options)
 
 
-@celery.task(queue=CeleryRoutingKey.ASSET_TASK_LIGHT)
-def icp_query_task(options):
-    from app.tasks.icp import run_icp_task
-    run_icp_task(options)
-
-
-@celery.task(queue=CeleryRoutingKey.ASSET_TASK_LIGHT)
-def tyc_query_task(options):
-    from app.tasks.tyc import run_tyc_task
-    run_tyc_task(options)
-
 
 
 def domain_exec(options):
     """域名监测任务"""
     scope_id = options.get("scope_id")
     domain = options.get("domain")
-    job_id = options.get("job_id")
+    scheduler_id = options.get("scheduler_id")
     monitor_options = options.get("monitor_options")
     name = options.get("name")
-    wrap_tasks.domain_executors(base_domain=domain, job_id=job_id,
+    wrap_tasks.domain_executors(base_domain=domain, scheduler_id=scheduler_id,
                                 scope_id=scope_id, options=monitor_options, name=name)
+
+
+def oneshot_domain_exec(options):
+    """一次性域名监测任务"""
+    scope_id = options.get("scope_id")
+    domain = options.get("domain")
+    monitor_options = options.get("monitor_options")
+    name = options.get("name")
+    wrap_tasks.oneshot_domain_executors(base_domain=domain, scope_id=scope_id, options=monitor_options, name=name)
 
 
 def domain_task_sync(options):
@@ -230,12 +241,23 @@ def ip_exec(options):
     """
     scope_id = options.get("scope_id")
     target = options.get("domain")
-    job_id = options.get("job_id")
+    scheduler_id = options.get("scheduler_id")
     monitor_options = options.get("monitor_options")
     name = options.get("name")
     wrap_tasks.ip_executor(target=target, scope_id=scope_id,
-                           task_name=name, job_id=job_id,
+                           task_name=name, scheduler_id=scheduler_id,
                            options=monitor_options)
+
+def oneshot_ip_exec(options):
+    """
+    一次性 IP 监测任务
+    """
+    scope_id = options.get("scope_id")
+    target = options.get("domain") # Payload uses 'domain' for IP target as well
+    monitor_options = options.get("monitor_options")
+    name = options.get("name")
+    wrap_tasks.oneshot_ip_executors(target=target, scope_id=scope_id,
+                                    task_name=name, options=monitor_options)
 
 
 def github_task_task(options):

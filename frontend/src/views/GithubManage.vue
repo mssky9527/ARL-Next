@@ -22,12 +22,252 @@
 
     <a-tabs v-model:activeKey="mainTab" type="card" class="main-tabs" size="large">
       
+<!-- ================= MAIN TAB 2: 威胁情报雷达 (情报侧) ================= -->
+<a-tab-pane key="ti" tab="📡 威胁情报雷达">
+  <a-card :bordered="false" style="border-radius: 8px;">
+    
+
+
+    <a-tabs v-model:activeKey="activeTabTi">
+      <a-tab-pane key="cve_history" tab="🚨 CVE 漏洞雷达">
+        <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; background: var(--arl-bg-light); padding: 12px 16px; border-radius: 6px;">
+          <div style="display: flex; align-items: center; gap: 16px;">
+            <div>
+              <span style="margin-right: 8px;">定时开启:</span>
+              <a-switch v-model:checked="cveConfig.enabled" @change="saveCveConfig" />
+            </div>
+            <div v-if="cveConfig.enabled">
+              <span style="margin-right: 8px;">抓取频率:</span>
+              <a-select v-model:value="cveConfig.interval" style="width: 120px" @change="saveCveConfig">
+                <a-select-option :value="6">每 6 小时</a-select-option>
+                <a-select-option :value="12">每 12 小时</a-select-option>
+                <a-select-option :value="24">每 24 小时</a-select-option>
+              </a-select>
+            </div>
+            <a-button type="primary" ghost @click="runCveOnce" :loading="cveRunLoading">立刻扫描一次</a-button>
+          </div>
+          <a-button type="dashed" @click="fetchCveData">
+            <template #icon><sync-outlined /></template> 刷新数据
+          </a-button>
+        </div>
+
+        <!-- CVE搜索栏 -->
+        <a-form layout="inline" style="row-gap: 16px; margin-bottom: 16px;">
+          <a-form-item label="CVE 编号：">
+            <a-input v-model:value="cveSearchForm.cve_name" placeholder="请输入 CVE 编号" style="width: 180px;" allowClear @pressEnter="onCveSearch">
+              <template #suffix><search-outlined @click="onCveSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
+            </a-input>
+          </a-form-item>
+          <a-form-item label="描述：">
+            <a-input v-model:value="cveSearchForm.desc" placeholder="请输入描述" style="width: 180px;" allowClear @pressEnter="onCveSearch">
+              <template #suffix><search-outlined @click="onCveSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
+            </a-input>
+          </a-form-item>
+        </a-form>
+
+        <div style="margin-bottom: 16px; display: flex; gap: 16px;">
+          <a-button @click="resetCveSearch">清 除</a-button>
+          <a-popconfirm title="确认删除所选记录吗？" @confirm="handleCveBatchDelete">
+            <a-button type="primary" danger :disabled="!cveHasSelected">批量删除</a-button>
+          </a-popconfirm>
+        </div>
+        <a-table :row-selection="{ selectedRowKeys: cveSelectedRowKeys, onChange: onCveSelectChange }" :loading="cveLoading" :dataSource="pagedCveData" :columns="cveColumns" :pagination="false" size="middle" rowKey="cve_name">
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'cve_name'">
+              <a :href="record.cve_url" target="_blank" style="color: #ff4d4f; font-weight: bold; font-size: 15px;">
+                {{ record.cve_name }} <link-outlined />
+              </a>
+            </template>
+            <template v-else-if="column.key === 'desc'">
+              <a-typography-paragraph :ellipsis="{ rows: 2, expandable: true, symbol: '展开' }" style="margin-bottom: 0;">
+                {{ record.desc }}
+              </a-typography-paragraph>
+            </template>
+            <template v-else-if="column.key === 'action'">
+              <a-popconfirm title="确认删除？" @confirm="handleCveDelete(record.cve_name)">
+                <a-button size="small" type="primary" danger ghost>删除</a-button>
+              </a-popconfirm>
+            </template>
+          </template>
+        </a-table>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0; margin-top: 16px;">
+          <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(filteredCveData.length / cvePagination.pageSize) || 1 }} 页 / {{ filteredCveData.length }} 条数据</div>
+          <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="cvePagination.current" v-model:pageSize="cvePagination.pageSize" :total="filteredCveData.length" show-size-changer @change="onCveTableChange" @showSizeChange="onCveTableChange" />
+        </div>
+      </a-tab-pane>
+
+      <!-- 子 Tab 2: 武器库追踪 -->
+      <a-tab-pane key="tools_target" tab="🛠️ 武器库追踪">
+        <div style="margin-bottom: 20px; display: flex; justify-content: space-between;">
+          <div style="display: flex; gap: 16px; align-items: center;">
+            <a-button type="primary" @click="openToolAdd">添加工具监控</a-button>
+            <a-button type="primary" ghost @click="runToolsOnce">立刻扫描一次</a-button>
+            
+            <div style="display: flex; align-items: center; gap: 8px; background: var(--arl-bg-light); padding: 4px 12px; border-radius: 4px; border: 1px solid var(--arl-border-color);">
+              <span>开启监控:</span>
+              <a-switch v-model:checked="toolsConfig.enabled" @change="saveToolsConfig" />
+            </div>
+            
+            <div v-if="toolsConfig.enabled" style="display: flex; align-items: center; gap: 8px; background: var(--arl-bg-light); padding: 4px 12px; border-radius: 4px; border: 1px solid var(--arl-border-color);">
+              <span>周期策略:</span>
+              <a-select v-model:value="toolsConfig.interval" style="width: 120px" @change="saveToolsConfig">
+                <a-select-option :value="1">每 1 小时</a-select-option>
+                <a-select-option :value="2">每 2 小时</a-select-option>
+                <a-select-option :value="6">每 6 小时</a-select-option>
+                <a-select-option :value="12">每 12 小时</a-select-option>
+                <a-select-option :value="24">每天一次</a-select-option>
+              </a-select>
+            </div>
+          </div>
+          <a-button type="dashed" @click="fetchToolsData">
+            <template #icon><sync-outlined /></template>
+            刷新列表
+          </a-button>
+        </div>
+
+        <!-- 武器库搜索栏 -->
+        <a-form layout="inline" style="row-gap: 16px; margin-bottom: 16px;">
+          <a-form-item label="工具URL：">
+            <a-input v-model:value="toolsSearchForm.repo_url" placeholder="请输入工具URL" style="width: 250px;" allowClear @pressEnter="onToolsSearch">
+              <template #suffix><search-outlined @click="onToolsSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
+            </a-input>
+          </a-form-item>
+        </a-form>
+
+        <div style="margin-bottom: 16px; display: flex; gap: 16px;">
+          <a-button @click="resetToolsSearch">清 除</a-button>
+          <a-popconfirm title="确认删除所选工具吗？" @confirm="handleToolsBatchDelete">
+            <a-button type="primary" danger :disabled="!toolsHasSelected">批量删除</a-button>
+          </a-popconfirm>
+        </div>
+
+        <a-table :row-selection="{ selectedRowKeys: toolsSelectedRowKeys, onChange: onToolsSelectChange }" :loading="toolsLoading" :dataSource="pagedToolsData" :columns="toolsColumns" :pagination="false" size="middle" rowKey="repo_url">
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'repo_url'">
+              <a :href="record.repo_url.replace('api.github.com/repos', 'github.com')" target="_blank" style="color: #1890ff; font-weight: 500;">
+                {{ record.repo_url.split('/').pop() }} <link-outlined />
+              </a>
+              <div style="color: var(--arl-text-color); opacity: 0.45; font-size: 12px;">{{ record.repo_url }}</div>
+            </template>
+            <template v-else-if="column.key === 'last_tag'">
+              <a-tag color="cyan" v-if="record.last_tag">{{ record.last_tag }}</a-tag>
+              <span v-else style="color: var(--arl-text-color); opacity: 0.25;">暂无版本</span>
+            </template>
+            <template v-else-if="column.key === 'action'">
+              <a :href="record.repo_url.replace('api.github.com/repos', 'github.com')" target="_blank">
+                <a-button size="small" type="primary" ghost style="margin-right: 8px;">查看</a-button>
+              </a>
+              <a-popconfirm title="确认取消监控该工具？" @confirm="handleToolDelete(record.repo_url)">
+                <a-button size="small" type="primary" danger ghost>删除</a-button>
+              </a-popconfirm>
+            </template>
+          </template>
+        </a-table>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0; margin-top: 16px;">
+          <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(filteredToolsData.length / toolsPagination.pageSize) || 1 }} 页 / {{ filteredToolsData.length }} 条数据</div>
+          <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="toolsPagination.current" v-model:pageSize="toolsPagination.pageSize" :total="filteredToolsData.length" show-size-changer @change="onToolsTableChange" @showSizeChange="onToolsTableChange" />
+        </div>
+      </a-tab-pane>
+
+      <!-- 子 Tab 3: 黑客动态监测 -->
+      <a-tab-pane key="hackers_target" tab="👨‍💻 黑客动态监测">
+        <div style="margin-bottom: 20px; display: flex; justify-content: space-between;">
+          <div style="display: flex; gap: 16px; align-items: center;">
+            <a-button type="primary" @click="openHackerAdd">添加大佬监控</a-button>
+            <a-button type="primary" ghost @click="runHackersOnce">立刻扫描一次</a-button>
+            
+            <div style="display: flex; align-items: center; gap: 8px; background: var(--arl-bg-light); padding: 4px 12px; border-radius: 4px; border: 1px solid var(--arl-border-color);">
+              <span>开启监控:</span>
+              <a-switch v-model:checked="hackersConfig.enabled" @change="saveHackersConfig" />
+            </div>
+            
+            <div v-if="hackersConfig.enabled" style="display: flex; align-items: center; gap: 8px; background: var(--arl-bg-light); padding: 4px 12px; border-radius: 4px; border: 1px solid var(--arl-border-color);">
+              <span>周期策略:</span>
+              <a-select v-model:value="hackersConfig.interval" style="width: 120px" @change="saveHackersConfig">
+                <a-select-option :value="1">每 1 小时</a-select-option>
+                <a-select-option :value="2">每 2 小时</a-select-option>
+                <a-select-option :value="6">每 6 小时</a-select-option>
+                <a-select-option :value="12">每 12 小时</a-select-option>
+                <a-select-option :value="24">每天一次</a-select-option>
+              </a-select>
+            </div>
+          </div>
+          <div style="display: flex; gap: 16px;">
+            <a-button style="border-color: #fadb14; color: #faad14;" @click="openHackersHistoryDrawer">
+              <template #icon>👀</template> 查看所有发现记录
+            </a-button>
+            <a-button type="dashed" @click="fetchHackersData">
+              <template #icon><sync-outlined /></template>
+              刷新列表
+            </a-button>
+          </div>
+        </div>
+
+        <!-- 黑客搜索栏 -->
+        <a-form layout="inline" style="row-gap: 16px; margin-bottom: 16px;">
+          <a-form-item label="Github ID：">
+            <a-input v-model:value="hackersSearchForm.github_id" placeholder="请输入 Github ID" style="width: 180px;" allowClear @pressEnter="onHackersSearch">
+              <template #suffix><search-outlined @click="onHackersSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
+            </a-input>
+          </a-form-item>
+        </a-form>
+
+        <div style="margin-bottom: 16px; display: flex; gap: 16px;">
+          <a-button @click="resetHackersSearch">清 除</a-button>
+          <a-popconfirm title="确认删除所选大佬吗？" @confirm="handleHackersBatchDelete">
+            <a-button type="primary" danger :disabled="!hackersHasSelected">批量删除</a-button>
+          </a-popconfirm>
+        </div>
+
+        <a-table :row-selection="{ selectedRowKeys: hackersSelectedRowKeys, onChange: onHackersSelectChange }" :loading="hackersLoading" :dataSource="pagedHackersData" :columns="hackersColumns" :pagination="false" size="middle" rowKey="github_id">
+          <template #emptyText>
+            <div style="padding: 40px 0;">
+              <inbox-outlined style="font-size: 48px; color: var(--arl-border-color);" />
+              <div style="color: var(--arl-text-color); opacity: 0.45; margin-top: 8px;">暂无监控大佬</div>
+              <a-button type="link" @click="hackerForm.github_id = 'knownsec'; submitHackerModal()">一键添加 knownsec</a-button>
+            </div>
+          </template>
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'github_id'">
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <a-avatar :src="`https://github.com/${(record.github_id || '').trim()}.png`" size="large" />
+                <a :href="`https://github.com/${(record.github_id || '').trim()}`" target="_blank" style="font-weight: 500; font-size: 15px;">
+                  {{ record.github_id }} <link-outlined />
+                </a>
+              </div>
+            </template>
+            <template v-if="column.key === 'found_count'">
+              <a-badge :count="record.found_count" :number-style="{ backgroundColor: '#52c41a' }" show-zero />
+            </template>
+            <template v-if="column.key === 'action'">
+              <a :href="`https://github.com/${record.github_id}`" target="_blank">
+                <a-button size="small" type="primary" ghost style="margin-right: 8px;">主页</a-button>
+              </a>
+              <a-popconfirm title="确认取消监控？" @confirm="handleHackerDelete(record.github_id)">
+                <a-button size="small" type="primary" danger ghost>删除</a-button>
+              </a-popconfirm>
+            </template>
+          </template>
+        </a-table>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0; margin-top: 16px;">
+          <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(filteredHackersData.length / hackersPagination.pageSize) || 1 }} 页 / {{ filteredHackersData.length }} 条数据</div>
+          <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="hackersPagination.current" v-model:pageSize="hackersPagination.pageSize" :total="filteredHackersData.length" show-size-changer @change="onHackersTableChange" @showSizeChange="onHackersTableChange" />
+        </div>
+      </a-tab-pane>
+    </a-tabs>
+  </a-card>
+</a-tab-pane>
+
       <!-- ================= MAIN TAB 1: 代码泄露监控 (防守侧) ================= -->
       <a-tab-pane key="dlp" tab="🛡️ 代码泄露监控">
         <a-card :bordered="false" style="border-radius: 8px;">
           <a-tabs v-model:activeKey="activeTabDlp">
             <!-- 子 Tab 1: 周期策略管理 -->
             <a-tab-pane key="scheduler" tab="周期策略管理">
+        <div style="position: sticky; top: 0px; z-index: 10; background-color: var(--arl-bg-layout); margin: -24px -24px 16px -24px; padding: 24px 24px 16px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+
+
+    <div style="position: sticky; top: 0px; z-index: 10; background-color: var(--arl-bg-layout); margin: -24px -24px 16px -24px; padding: 24px 24px 16px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
         <div style="margin-bottom: 20px; display: flex; justify-content: space-between;">
           <a-button type="primary" @click="openSchedulerAdd">添加策略</a-button>
           <a-button type="dashed" @click="fetchSchedulerData">
@@ -37,31 +277,29 @@
         </div>
 
         <!-- 策略搜索栏 -->
-        <div class="search-row" style="margin-bottom: 16px; background-color: var(--arl-bg-light); padding: 16px; border-radius: 4px;">
-          <div class="search-item">
-            <span class="label">策略名称：</span>
+        <a-form layout="inline" style="row-gap: 16px; margin-bottom: 16px;">
+          <a-form-item label="策略名称：">
             <a-input v-model:value="schedulerSearchForm.name" placeholder="请输入策略名称" style="width: 180px;" allowClear @pressEnter="onSchedulerSearch">
               <template #suffix><search-outlined @click="onSchedulerSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
             </a-input>
-          </div>
-          <div class="search-item">
-            <span class="label">关键字：</span>
+          </a-form-item>
+          <a-form-item label="关键字：">
             <a-input v-model:value="schedulerSearchForm.keyword" placeholder="请输入关键字" style="width: 180px;" allowClear @pressEnter="onSchedulerSearch">
               <template #suffix><search-outlined @click="onSchedulerSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
             </a-input>
-          </div>
-          <div class="search-item">
-            <span class="label">状态：</span>
+          </a-form-item>
+          <a-form-item label="状态：">
             <a-select v-model:value="schedulerSearchForm.status" placeholder="请选择状态" style="width: 180px;" allowClear @change="onSchedulerSearch">
               <a-select-option value="running">running</a-select-option>
               <a-select-option value="stop">stop</a-select-option>
               <a-select-option value="error">error</a-select-option>
             </a-select>
-          </div>
-        </div>
+          </a-form-item>
+        </a-form>
 
         <!-- 批量操作 -->
         <div style="margin-bottom: 16px; display: flex; gap: 8px;">
+          <a-button @click="resetSchedulerSearch">清 除</a-button>
           <a-popconfirm title="确认删除所选策略吗？" @confirm="handleSchedulerBatchDelete">
             <a-button :disabled="!schedulerHasSelected">批量删除</a-button>
           </a-popconfirm>
@@ -70,8 +308,12 @@
           </a-popconfirm>
         </div>
 
+        
+    </div>
         <!-- 策略表格 -->
-        <a-table
+        
+        </div>
+<a-table
             :row-selection="{ selectedRowKeys: schedulerSelectedRowKeys, onChange: onSchedulerSelectChange }"
             :loading="schedulerLoading"
             :dataSource="schedulerData"
@@ -125,7 +367,7 @@
         <!-- 策略分页 -->
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0;">
           <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(schedulerPagination.total / schedulerPagination.pageSize) || 1 }} 页 / {{ schedulerPagination.total }} 条数据</div>
-          <a-pagination v-model:current="schedulerPagination.current" v-model:pageSize="schedulerPagination.pageSize" :total="schedulerPagination.total" show-size-changer @change="handleSchedulerTableChange" />
+          <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="schedulerPagination.current" v-model:pageSize="schedulerPagination.pageSize" :total="schedulerPagination.total" show-size-changer @change="handleSchedulerTableChange" />
         </div>
       </a-tab-pane>
 
@@ -140,21 +382,18 @@
         </div>
 
         <!-- 任务搜索栏 -->
-        <div class="search-row" style="margin-bottom: 16px; background-color: var(--arl-bg-light); padding: 16px; border-radius: 4px;">
-          <div class="search-item">
-            <span class="label">任务名称：</span>
+        <a-form layout="inline" style="row-gap: 16px; margin-bottom: 16px;">
+          <a-form-item label="任务名称：">
             <a-input v-model:value="taskSearchForm.name" placeholder="请输入任务名称" style="width: 180px;" allowClear @pressEnter="onTaskSearch">
               <template #suffix><search-outlined @click="onTaskSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
             </a-input>
-          </div>
-          <div class="search-item">
-            <span class="label">关键字：</span>
+          </a-form-item>
+          <a-form-item label="关键字：">
             <a-input v-model:value="taskSearchForm.keyword" placeholder="请输入关键字" style="width: 180px;" allowClear @pressEnter="onTaskSearch">
               <template #suffix><search-outlined @click="onTaskSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
             </a-input>
-          </div>
-          <div class="search-item">
-            <span class="label">状态：</span>
+          </a-form-item>
+          <a-form-item label="状态：">
             <a-select v-model:value="taskSearchForm.status" placeholder="请选择状态" style="width: 180px;" allowClear @change="onTaskSearch">
               <a-select-option value="waiting">waiting</a-select-option>
               <a-select-option value="running">running</a-select-option>
@@ -162,11 +401,12 @@
               <a-select-option value="error">error</a-select-option>
               <a-select-option value="stop">stop</a-select-option>
             </a-select>
-          </div>
-        </div>
+          </a-form-item>
+        </a-form>
 
         <!-- 批量操作 -->
         <div style="margin-bottom: 16px; display: flex; gap: 8px;">
+          <a-button @click="resetTaskSearch">清 除</a-button>
           <a-popconfirm title="确认删除所选任务吗？" @confirm="handleTaskBatchDelete">
             <a-button :disabled="!taskHasSelected">批量删除</a-button>
           </a-popconfirm>
@@ -234,247 +474,7 @@
         <!-- 任务分页 -->
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0;">
           <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(taskPagination.total / taskPagination.pageSize) || 1 }} 页 / {{ taskPagination.total }} 条数据</div>
-          <a-pagination v-model:current="taskPagination.current" v-model:pageSize="taskPagination.pageSize" :total="taskPagination.total" show-size-changer @change="handleTaskTableChange" />
-        </div>
-      </a-tab-pane>
-    </a-tabs>
-  </a-card>
-</a-tab-pane>
-
-<!-- ================= MAIN TAB 2: 威胁情报雷达 (情报侧) ================= -->
-<a-tab-pane key="ti" tab="📡 威胁情报雷达">
-  <a-card :bordered="false" style="border-radius: 8px;">
-    
-
-
-    <a-tabs v-model:activeKey="activeTabTi">
-      <a-tab-pane key="cve_history" tab="🚨 CVE 漏洞雷达">
-        <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; background: var(--arl-bg-light); padding: 12px 16px; border-radius: 6px;">
-          <div style="display: flex; align-items: center; gap: 16px;">
-            <div>
-              <span style="margin-right: 8px;">定时开启:</span>
-              <a-switch v-model:checked="cveConfig.enabled" @change="saveCveConfig" />
-            </div>
-            <div v-if="cveConfig.enabled">
-              <span style="margin-right: 8px;">抓取频率:</span>
-              <a-select v-model:value="cveConfig.interval" style="width: 120px" @change="saveCveConfig">
-                <a-select-option :value="6">每 6 小时</a-select-option>
-                <a-select-option :value="12">每 12 小时</a-select-option>
-                <a-select-option :value="24">每 24 小时</a-select-option>
-              </a-select>
-            </div>
-            <a-button type="primary" ghost @click="runCveOnce" :loading="cveRunLoading">立刻扫描一次</a-button>
-          </div>
-          <a-button type="dashed" @click="fetchCveData">
-            <template #icon><sync-outlined /></template> 刷新数据
-          </a-button>
-        </div>
-
-        <!-- CVE搜索栏 -->
-        <div class="search-row" style="margin-bottom: 16px; background-color: var(--arl-bg-light); padding: 16px; border-radius: 4px;">
-          <div class="search-item">
-            <span class="label">CVE 编号：</span>
-            <a-input v-model:value="cveSearchForm.cve_name" placeholder="请输入 CVE 编号" style="width: 180px;" allowClear @pressEnter="onCveSearch">
-              <template #suffix><search-outlined @click="onCveSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
-            </a-input>
-          </div>
-          <div class="search-item">
-            <span class="label">描述：</span>
-            <a-input v-model:value="cveSearchForm.desc" placeholder="请输入描述" style="width: 180px;" allowClear @pressEnter="onCveSearch">
-              <template #suffix><search-outlined @click="onCveSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
-            </a-input>
-          </div>
-        </div>
-
-        <div style="margin-bottom: 16px; display: flex; gap: 16px;">
-          <a-button @click="resetCveSearch">清 除</a-button>
-          <a-popconfirm title="确认删除所选记录吗？" @confirm="handleCveBatchDelete">
-            <a-button type="primary" danger :disabled="!cveHasSelected">批量删除</a-button>
-          </a-popconfirm>
-        </div>
-        <a-table :row-selection="{ selectedRowKeys: cveSelectedRowKeys, onChange: onCveSelectChange }" :loading="cveLoading" :dataSource="pagedCveData" :columns="cveColumns" :pagination="false" size="middle" rowKey="cve_name">
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'cve_name'">
-              <a :href="record.cve_url" target="_blank" style="color: #ff4d4f; font-weight: bold; font-size: 15px;">
-                {{ record.cve_name }} <link-outlined />
-              </a>
-            </template>
-            <template v-else-if="column.key === 'desc'">
-              <a-typography-paragraph :ellipsis="{ rows: 2, expandable: true, symbol: '展开' }" style="margin-bottom: 0;">
-                {{ record.desc }}
-              </a-typography-paragraph>
-            </template>
-            <template v-else-if="column.key === 'action'">
-              <a-popconfirm title="确认删除？" @confirm="handleCveDelete(record.cve_name)">
-                <a-button size="small" type="primary" danger ghost>删除</a-button>
-              </a-popconfirm>
-            </template>
-          </template>
-        </a-table>
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0; margin-top: 16px;">
-          <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(filteredCveData.length / cvePagination.pageSize) || 1 }} 页 / {{ filteredCveData.length }} 条数据</div>
-          <a-pagination v-model:current="cvePagination.current" v-model:pageSize="cvePagination.pageSize" :total="filteredCveData.length" show-size-changer @change="onCveTableChange" @showSizeChange="onCveTableChange" />
-        </div>
-      </a-tab-pane>
-
-      <!-- 子 Tab 2: 武器库追踪 -->
-      <a-tab-pane key="tools_target" tab="🛠️ 武器库追踪">
-        <div style="margin-bottom: 20px; display: flex; justify-content: space-between;">
-          <div style="display: flex; gap: 16px; align-items: center;">
-            <a-button type="primary" @click="openToolAdd">添加工具监控</a-button>
-            <a-button type="primary" ghost @click="runToolsOnce">立刻扫描一次</a-button>
-            
-            <div style="display: flex; align-items: center; gap: 8px; background: var(--arl-bg-light); padding: 4px 12px; border-radius: 4px; border: 1px solid var(--arl-border-color);">
-              <span>开启监控:</span>
-              <a-switch v-model:checked="toolsConfig.enabled" @change="saveToolsConfig" />
-            </div>
-            
-            <div v-if="toolsConfig.enabled" style="display: flex; align-items: center; gap: 8px; background: var(--arl-bg-light); padding: 4px 12px; border-radius: 4px; border: 1px solid var(--arl-border-color);">
-              <span>周期策略:</span>
-              <a-select v-model:value="toolsConfig.interval" style="width: 120px" @change="saveToolsConfig">
-                <a-select-option :value="1">每 1 小时</a-select-option>
-                <a-select-option :value="2">每 2 小时</a-select-option>
-                <a-select-option :value="6">每 6 小时</a-select-option>
-                <a-select-option :value="12">每 12 小时</a-select-option>
-                <a-select-option :value="24">每天一次</a-select-option>
-              </a-select>
-            </div>
-          </div>
-          <a-button type="dashed" @click="fetchToolsData">
-            <template #icon><sync-outlined /></template>
-            刷新列表
-          </a-button>
-        </div>
-
-        <!-- 武器库搜索栏 -->
-        <div class="search-row" style="margin-bottom: 16px; background-color: var(--arl-bg-light); padding: 16px; border-radius: 4px;">
-          <div class="search-item">
-            <span class="label">工具URL：</span>
-            <a-input v-model:value="toolsSearchForm.repo_url" placeholder="请输入工具URL" style="width: 250px;" allowClear @pressEnter="onToolsSearch">
-              <template #suffix><search-outlined @click="onToolsSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
-            </a-input>
-          </div>
-        </div>
-
-        <div style="margin-bottom: 16px; display: flex; gap: 16px;">
-          <a-button @click="resetToolsSearch">清 除</a-button>
-          <a-popconfirm title="确认删除所选工具吗？" @confirm="handleToolsBatchDelete">
-            <a-button type="primary" danger :disabled="!toolsHasSelected">批量删除</a-button>
-          </a-popconfirm>
-        </div>
-
-        <a-table :row-selection="{ selectedRowKeys: toolsSelectedRowKeys, onChange: onToolsSelectChange }" :loading="toolsLoading" :dataSource="pagedToolsData" :columns="toolsColumns" :pagination="false" size="middle" rowKey="repo_url">
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'repo_url'">
-              <a :href="record.repo_url.replace('api.github.com/repos', 'github.com')" target="_blank" style="color: #1890ff; font-weight: 500;">
-                {{ record.repo_url.split('/').pop() }} <link-outlined />
-              </a>
-              <div style="color: var(--arl-text-color); opacity: 0.45; font-size: 12px;">{{ record.repo_url }}</div>
-            </template>
-            <template v-else-if="column.key === 'last_tag'">
-              <a-tag color="cyan" v-if="record.last_tag">{{ record.last_tag }}</a-tag>
-              <span v-else style="color: var(--arl-text-color); opacity: 0.25;">暂无版本</span>
-            </template>
-            <template v-else-if="column.key === 'action'">
-              <a :href="record.repo_url.replace('api.github.com/repos', 'github.com')" target="_blank">
-                <a-button size="small" type="primary" ghost style="margin-right: 8px;">查看</a-button>
-              </a>
-              <a-popconfirm title="确认取消监控该工具？" @confirm="handleToolDelete(record.repo_url)">
-                <a-button size="small" type="primary" danger ghost>删除</a-button>
-              </a-popconfirm>
-            </template>
-          </template>
-        </a-table>
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0; margin-top: 16px;">
-          <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(filteredToolsData.length / toolsPagination.pageSize) || 1 }} 页 / {{ filteredToolsData.length }} 条数据</div>
-          <a-pagination v-model:current="toolsPagination.current" v-model:pageSize="toolsPagination.pageSize" :total="filteredToolsData.length" show-size-changer @change="onToolsTableChange" @showSizeChange="onToolsTableChange" />
-        </div>
-      </a-tab-pane>
-
-      <!-- 子 Tab 3: 黑客动态监测 -->
-      <a-tab-pane key="hackers_target" tab="👨‍💻 黑客动态监测">
-        <div style="margin-bottom: 20px; display: flex; justify-content: space-between;">
-          <div style="display: flex; gap: 16px; align-items: center;">
-            <a-button type="primary" @click="openHackerAdd">添加大佬监控</a-button>
-            <a-button type="primary" ghost @click="runHackersOnce">立刻扫描一次</a-button>
-            
-            <div style="display: flex; align-items: center; gap: 8px; background: var(--arl-bg-light); padding: 4px 12px; border-radius: 4px; border: 1px solid var(--arl-border-color);">
-              <span>开启监控:</span>
-              <a-switch v-model:checked="hackersConfig.enabled" @change="saveHackersConfig" />
-            </div>
-            
-            <div v-if="hackersConfig.enabled" style="display: flex; align-items: center; gap: 8px; background: var(--arl-bg-light); padding: 4px 12px; border-radius: 4px; border: 1px solid var(--arl-border-color);">
-              <span>周期策略:</span>
-              <a-select v-model:value="hackersConfig.interval" style="width: 120px" @change="saveHackersConfig">
-                <a-select-option :value="1">每 1 小时</a-select-option>
-                <a-select-option :value="2">每 2 小时</a-select-option>
-                <a-select-option :value="6">每 6 小时</a-select-option>
-                <a-select-option :value="12">每 12 小时</a-select-option>
-                <a-select-option :value="24">每天一次</a-select-option>
-              </a-select>
-            </div>
-          </div>
-          <div style="display: flex; gap: 16px;">
-            <a-button style="border-color: #fadb14; color: #faad14;" @click="openHackersHistoryDrawer">
-              <template #icon>👀</template> 查看所有发现记录
-            </a-button>
-            <a-button type="dashed" @click="fetchHackersData">
-              <template #icon><sync-outlined /></template>
-              刷新列表
-            </a-button>
-          </div>
-        </div>
-
-        <!-- 黑客搜索栏 -->
-        <div class="search-row" style="margin-bottom: 16px; background-color: var(--arl-bg-light); padding: 16px; border-radius: 4px;">
-          <div class="search-item">
-            <span class="label">Github ID：</span>
-            <a-input v-model:value="hackersSearchForm.github_id" placeholder="请输入 Github ID" style="width: 180px;" allowClear @pressEnter="onHackersSearch">
-              <template #suffix><search-outlined @click="onHackersSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" /></template>
-            </a-input>
-          </div>
-        </div>
-
-        <div style="margin-bottom: 16px; display: flex; gap: 16px;">
-          <a-button @click="resetHackersSearch">清 除</a-button>
-          <a-popconfirm title="确认删除所选大佬吗？" @confirm="handleHackersBatchDelete">
-            <a-button type="primary" danger :disabled="!hackersHasSelected">批量删除</a-button>
-          </a-popconfirm>
-        </div>
-
-        <a-table :row-selection="{ selectedRowKeys: hackersSelectedRowKeys, onChange: onHackersSelectChange }" :loading="hackersLoading" :dataSource="pagedHackersData" :columns="hackersColumns" :pagination="false" size="middle" rowKey="github_id">
-          <template #emptyText>
-            <div style="padding: 40px 0;">
-              <inbox-outlined style="font-size: 48px; color: var(--arl-border-color);" />
-              <div style="color: var(--arl-text-color); opacity: 0.45; margin-top: 8px;">暂无监控大佬</div>
-              <a-button type="link" @click="hackerForm.github_id = 'knownsec'; submitHackerModal()">一键添加 knownsec</a-button>
-            </div>
-          </template>
-          <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'github_id'">
-              <div style="display: flex; align-items: center; gap: 12px;">
-                <a-avatar :src="`https://github.com/${(record.github_id || '').trim()}.png`" size="large" />
-                <a :href="`https://github.com/${(record.github_id || '').trim()}`" target="_blank" style="font-weight: 500; font-size: 15px;">
-                  {{ record.github_id }} <link-outlined />
-                </a>
-              </div>
-            </template>
-            <template v-if="column.key === 'found_count'">
-              <a-badge :count="record.found_count" :number-style="{ backgroundColor: '#52c41a' }" show-zero />
-            </template>
-            <template v-if="column.key === 'action'">
-              <a :href="`https://github.com/${record.github_id}`" target="_blank">
-                <a-button size="small" type="primary" ghost style="margin-right: 8px;">主页</a-button>
-              </a>
-              <a-popconfirm title="确认取消监控？" @confirm="handleHackerDelete(record.github_id)">
-                <a-button size="small" type="primary" danger ghost>删除</a-button>
-              </a-popconfirm>
-            </template>
-          </template>
-        </a-table>
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 0; margin-top: 16px;">
-          <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(filteredHackersData.length / hackersPagination.pageSize) || 1 }} 页 / {{ filteredHackersData.length }} 条数据</div>
-          <a-pagination v-model:current="hackersPagination.current" v-model:pageSize="hackersPagination.pageSize" :total="filteredHackersData.length" show-size-changer @change="onHackersTableChange" @showSizeChange="onHackersTableChange" />
+          <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="taskPagination.current" v-model:pageSize="taskPagination.pageSize" :total="taskPagination.total" show-size-changer @change="handleTaskTableChange" />
         </div>
       </a-tab-pane>
     </a-tabs>
@@ -601,15 +601,15 @@ import { SearchOutlined, InboxOutlined, SyncOutlined, LinkOutlined, AlertOutline
 
 const router = useRouter();
 const route = useRoute();
-const mainTab = ref('dlp');
+const mainTab = ref('ti');
 const activeTabDlp = ref('scheduler');
 const activeTabTi = ref('cve_history');
 
 // 💡 优先识别 URL 中传过来的参数（例如 dashboard 跳转过来默认指向对应 Tab）
 onMounted(() => {
-  if (route.query.tab === 'task') {
+  if (route.query.tab && ['task', 'scheduler'].includes(route.query.tab)) {
     mainTab.value = 'dlp';
-    activeTabDlp.value = 'task';
+    activeTabDlp.value = route.query.tab;
   } else if (route.query.tab && ['cve_history', 'tools_target', 'hackers_target'].includes(route.query.tab)) {
     mainTab.value = 'ti';
     activeTabTi.value = route.query.tab;
@@ -682,6 +682,11 @@ const fetchSchedulerData = async () => {
   }
 };
 
+const resetSchedulerSearch = () => {
+  Object.assign(schedulerSearchForm, { name: '', keyword: '', status: undefined });
+  schedulerPagination.current = 1;
+  onSchedulerSearch();
+};
 const onSchedulerSearch = () => { schedulerPagination.current = 1; fetchSchedulerData(); };
 const handleSchedulerTableChange = (page, pageSize) => {
   schedulerPagination.current = page;
@@ -812,6 +817,11 @@ const fetchTaskData = async () => {
   }
 };
 
+const resetTaskSearch = () => {
+  Object.assign(taskSearchForm, { name: '', keyword: '', status: undefined });
+  taskPagination.current = 1;
+  onTaskSearch();
+};
 const onTaskSearch = () => { taskPagination.current = 1; fetchTaskData(); };
 const handleTaskTableChange = (page, pageSize) => {
   taskPagination.current = page;

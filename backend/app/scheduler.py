@@ -1,5 +1,6 @@
 import sys
 from bson import ObjectId
+from pymongo import UpdateOne
 from app.utils import conn_db as conn
 from app import utils
 from app import celerytask
@@ -27,26 +28,26 @@ ip_monitor_options = {
 }
 
 
-def add_job(domain, scope_id, options=None, interval=60 * 1, name="", scope_type=AssetScopeType.DOMAIN):
+def create_scheduler_job(domain, scope_id, interval, scope_type, name="", custom_options=None):
     logger.info("add {} job {} {} {}".format(scope_type, interval, domain, scope_id))
-    if options is None:
+    current_time = int(time.time()) + 30
+    
+    if custom_options is None:
         if scope_type == AssetScopeType.DOMAIN:
-            options = domain_monitor_options
-        if scope_type == AssetScopeType.IP:
-            options = ip_monitor_options
-
-    # 对IP任务域名监测选项设置为False
-    disable_options = {
-        "domain_brute": False,
-        "alt_dns": False,
-        "dns_query_plugin": False,
-        "arl_search": False
-    }
+            custom_options = domain_monitor_options.copy()
+        elif scope_type == AssetScopeType.IP:
+            custom_options = ip_monitor_options.copy()
+        else:
+            custom_options = {}
 
     if scope_type == AssetScopeType.IP:
-        options.update(disable_options)
+        custom_options.update({
+            "domain_brute": False,
+            "alt_dns": False,
+            "dns_query_plugin": False,
+            "arl_search": False
+        })
 
-    current_time = int(time.time()) + 30
     item = {
         "domain": domain,
         "scope_id": scope_id,
@@ -57,96 +58,59 @@ def add_job(domain, scope_id, options=None, interval=60 * 1, name="", scope_type
         "last_run_date": "-",
         "run_number": 0,
         "status": SchedulerStatus.RUNNING,
-        "monitor_options": options,
+        "monitor_options": custom_options,
         "name": name,
         "scope_type": scope_type
-
     }
-    conn('scheduler').insert(item)
-
+    conn('scheduler').insert_one(item)
     return str(item["_id"])
 
+def add_scheduler(domain, scope_id, options=None, interval=60 * 1, name="", scope_type=AssetScopeType.DOMAIN):
+    return create_scheduler_job(domain, scope_id, interval, scope_type, name, options)
 
 def add_asset_site_monitor_job(scope_id, name, interval=60 * 1):
-    current_time = int(time.time()) + 30
-
-    item = {
-        "domain": "资产站点更新",
-        "scope_id": scope_id,
-        "interval": interval,
-        "next_run_time": current_time,
-        "next_run_date": utils.time2date(current_time),
-        "last_run_time": 0,
-        "last_run_date": "-",
-        "run_number": 0,
-        "status": SchedulerStatus.RUNNING,
-        "monitor_options": {},
-        "name": name,
-        "scope_type": "site_update_monitor"
-    }
-    conn('scheduler').insert(item)
-
-    return str(item["_id"])
-
+    return create_scheduler_job("资产站点更新", scope_id, interval, "site_update_monitor", name)
 
 def add_asset_wih_monitor_job(scope_id, name, interval=60 * 1):
-    current_time = int(time.time()) + 30
-
-    item = {
-        "domain": "资产分组 WIH 更新",
-        "scope_id": scope_id,
-        "interval": interval,
-        "next_run_time": current_time,
-        "next_run_date": utils.time2date(current_time),
-        "last_run_time": 0,
-        "last_run_date": "-",
-        "run_number": 0,
-        "status": SchedulerStatus.RUNNING,
-        "monitor_options": {},
-        "name": name,
-        "scope_type": "wih_update_monitor"
-    }
-    conn('scheduler').insert(item)
-
-    return str(item["_id"])
+    return create_scheduler_job("资产分组 WIH 更新", scope_id, interval, "wih_update_monitor", name)
 
 
-def delete_job(job_id):
-    ret = conn("scheduler").delete_one({"_id": ObjectId(job_id)})
+def delete_scheduler(scheduler_id):
+    ret = conn("scheduler").delete_one({"_id": ObjectId(scheduler_id)})
     return ret
 
 
-def stop_job(job_id):
-    item = find_job(job_id)
+def stop_scheduler(scheduler_id):
+    item = find_scheduler(scheduler_id)
     item["next_run_date"] = "-"
     item["next_run_time"] = sys.maxsize
     item["status"] = SchedulerStatus.STOP
-    query = {"_id": ObjectId(job_id)}
+    query = {"_id": ObjectId(scheduler_id)}
     ret = conn('scheduler').find_one_and_replace(query, item)
     return ret
 
 
-def recover_job(job_id):
+def recover_scheduler(scheduler_id):
     current_time = int(time.time()) + 30
-    item = find_job(job_id)
+    item = find_scheduler(scheduler_id)
 
     next_run_time = current_time + item["interval"]
     item["next_run_date"] = utils.time2date(next_run_time)
     item["next_run_time"] = next_run_time
     item["status"] = SchedulerStatus.RUNNING
-    query = {"_id": ObjectId(job_id)}
+    query = {"_id": ObjectId(scheduler_id)}
     ret = conn('scheduler').find_one_and_replace(query, item)
     return ret
 
 
-def run_job(job_id):
-    item = find_job(job_id)
+def run_scheduler(scheduler_id):
+    item = find_scheduler(scheduler_id)
     if not item:
         return False
 
     if item.get("status") == SchedulerStatus.STOP:
-        recover_job(job_id)
-        item = find_job(job_id)
+        recover_scheduler(scheduler_id)
+        item = find_scheduler(scheduler_id)
 
     domain = item["domain"]
     scope_id = item["scope_id"]
@@ -168,27 +132,27 @@ def run_job(job_id):
                                                        scheduler_id=str(item["_id"]))
 
     else:
-        submit_job(domain=domain, job_id=str(item["_id"]),
+        submit_scheduler(domain=domain, scheduler_id=str(item["_id"]),
                    scope_id=scope_id, options=options,
                    name=name, scope_type=scope_type)
 
     return True
 
 
-def find_job(job_id):
-    query = {"_id": ObjectId(job_id)}
+def find_scheduler(scheduler_id):
+    query = {"_id": ObjectId(scheduler_id)}
     item = conn('scheduler').find_one(query)
     return item
 
 
-def all_job():
+def all_scheduler():
     items = []
     for item in conn('scheduler').find():
         items.append(item)
     return items
 
 
-def submit_job(domain, job_id, scope_id, options=None, name="", scope_type=AssetScopeType.DOMAIN):
+def submit_scheduler(domain, scheduler_id, scope_id, options=None, name="", scope_type=AssetScopeType.DOMAIN):
     monitor_options = domain_monitor_options.copy()
     if scope_type == AssetScopeType.IP:
         monitor_options = ip_monitor_options.copy()
@@ -201,7 +165,7 @@ def submit_job(domain, job_id, scope_id, options=None, name="", scope_type=Asset
     task_data = {
         "domain": domain,
         "scope_id": scope_id,
-        "job_id": job_id,
+        "scheduler_id": scheduler_id,
         "type": scope_type,
         "monitor_options": monitor_options,
         "name": name
@@ -224,9 +188,9 @@ def submit_job(domain, job_id, scope_id, options=None, name="", scope_type=Asset
         logger.info("submit ip job {} {} {}".format(celery_id, domain, scope_id))
 
 
-def update_job_run(job_id):
+def update_scheduler_run(scheduler_id):
     curr_time = int(time.time())
-    item = find_job(job_id)
+    item = find_scheduler(scheduler_id)
     if not item:
         return
     item["next_run_time"] = curr_time + item["interval"]
@@ -238,44 +202,93 @@ def update_job_run(job_id):
     conn('scheduler').find_one_and_replace(query, item)
 
 
+DISPATCH_MAP = {
+    AssetScopeType.DOMAIN: {
+        "action": CeleryAction.DOMAIN_EXEC_TASK,
+        "queue": CeleryRoutingKey.ASSET_TASK_HEAVY
+    },
+    AssetScopeType.IP: {
+        "action": CeleryAction.IP_EXEC_TASK,
+        "queue": CeleryRoutingKey.ASSET_TASK_HEAVY
+    },
+    "site_update_monitor": {
+        "func": asset_site_monitor.submit_asset_site_monitor_job
+    },
+    "wih_update_monitor": {
+        "func": asset_wih_monitor.submit_asset_wih_monitor_job
+    }
+}
+
 def asset_monitor_scheduler():
     curr_time = int(time.time())
-    for item in all_job():
+    query = {
+        "status": SchedulerStatus.RUNNING,
+        "next_run_time": {"$lte": curr_time}
+    }
+    due_tasks = conn('scheduler').find(query)
+    bulk_updates = []
+
+    for item in due_tasks:
         try:
-            if item.get("status") == SchedulerStatus.STOP:
+            scheduler_id_str = str(item["_id"])
+            running_tasks = conn('task').count_documents({
+                "options.scheduler_id": scheduler_id_str,
+                "status": {"$nin": [TaskStatus.DONE, TaskStatus.ERROR, TaskStatus.STOP]}
+            })
+
+            if running_tasks > 0:
+                logger.info(f"Task overlap prevented: scheduler {scheduler_id_str} is already running. Skipping this round.")
+                next_time = curr_time + item.get("interval", 3600)
+                bulk_updates.append(UpdateOne(
+                    {"_id": item["_id"]},
+                    {"$set": {"next_run_time": next_time, "next_run_date": utils.time2date(next_time)}}
+                ))
                 continue
-            if item["next_run_time"] <= curr_time:
-                domain = item["domain"]
-                scope_id = item["scope_id"]
-                options = item["monitor_options"]
-                name = item["name"]
-                scope_type = item.get("scope_type")
 
-                if not scope_type:
-                    scope_type = AssetScopeType.DOMAIN
+            scope_type = item.get("scope_type") or AssetScopeType.DOMAIN
+            strategy = DISPATCH_MAP.get(scope_type)
 
-                if scope_type == "site_update_monitor":
-                    asset_site_monitor.submit_asset_site_monitor_job(scope_id=scope_id,
-                                                                     name=name,
-                                                                     scheduler_id=str(item["_id"]))
+            if not strategy:
+                logger.error(f"Unknown scope type: {scope_type}")
+                continue
 
-                if scope_type == "wih_update_monitor":
-                    asset_wih_monitor.submit_asset_wih_monitor_job(scope_id=scope_id,
-                                                                   name=name,
-                                                                   scheduler_id=str(item["_id"]))
+            if "func" in strategy:
+                strategy["func"](scope_id=item["scope_id"], name=item.get("name", ""), scheduler_id=scheduler_id_str)
+            else:
+                task_data = {
+                    "domain": item["domain"],
+                    "scope_id": item["scope_id"],
+                    "scheduler_id": scheduler_id_str,
+                    "type": scope_type,
+                    "monitor_options": item.get("monitor_options", {}),
+                    "name": item.get("name", "")
+                }
+                task_options = {
+                    "celery_action": strategy["action"],
+                    "data": task_data
+                }
+                celery_id = celerytask.arl_task.apply_async(kwargs={'options': task_options}, queue=strategy["queue"])
+                logger.info(f"submit {scope_type} job {celery_id} {item['domain']} {item['scope_id']}")
 
-                else:
-                    submit_job(domain=domain, job_id=str(item["_id"]),
-                               scope_id=scope_id, options=options,
-                               name=name, scope_type=scope_type)
-
-                item["next_run_time"] = curr_time + item["interval"]
-                item["next_run_date"] = utils.time2date(item["next_run_time"])
-                query = {"_id": item["_id"]}
-                conn('scheduler').find_one_and_replace(query, item)
+            next_time = curr_time + item.get("interval", 3600)
+            bulk_updates.append(UpdateOne(
+                {"_id": item["_id"]},
+                {"$set": {
+                    "next_run_time": next_time,
+                    "next_run_date": utils.time2date(next_time),
+                    "last_run_time": curr_time,
+                    "last_run_date": utils.time2date(curr_time)
+                }, "$inc": {"run_number": 1}}
+            ))
 
         except Exception as e:
-            logger.exception(e)
+            logger.exception(f"Scheduler dispatch error for {item.get('_id')}: {str(e)}")
+
+    if bulk_updates:
+        try:
+            conn('scheduler').bulk_write(bulk_updates, ordered=False)
+        except Exception as e:
+            logger.error(f"Bulk write error in scheduler: {str(e)}")
 
 
 def cleanup_zombie_tasks():
@@ -294,13 +307,13 @@ def cleanup_zombie_tasks():
             # 对于监控任务，删除残余记录
             conn('task').delete_one({"_id": task["_id"]})
             
-            # 找到对应的 job_id，将其 next_run_time 设置为当前时间
+            # 找到对应的 scheduler_id，将其 next_run_time 设置为当前时间
             options = task.get("options", {})
-            job_id = options.get("job_id")
-            if job_id:
-                logger.info(f"Re-scheduling monitor job: {job_id}")
+            scheduler_id = options.get("scheduler_id")
+            if scheduler_id:
+                logger.info(f"Re-scheduling monitor job: {scheduler_id}")
                 conn('scheduler').update_one(
-                    {"_id": ObjectId(job_id)},
+                    {"_id": ObjectId(scheduler_id)},
                     {"$set": {"next_run_time": int(time.time())}}
                 )
         else:

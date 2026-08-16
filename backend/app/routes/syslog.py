@@ -1,6 +1,5 @@
 from flask_restx import Namespace, fields
 from app.utils import get_logger, auth
-from app import utils
 from . import base_query_fields, ARLResource
 
 ns = Namespace('syslog', description="系统与任务日志接口")

@@ -1,4 +1,4 @@
-from flask_restx import Namespace, Resource, fields
+from flask_restx import Namespace, fields
 from app.utils.security_policy import get_security_policy, update_security_policy
 from app.utils.performance_config import get_performance_config, update_performance_config
 from . import ARLResource
@@ -14,7 +14,8 @@ security_policy_model = ns.model('SecurityPolicy', {
 
 performance_model = ns.model('Performance', {
     'celery_heavy_concurrency': fields.Integer(required=True, description='重任务Celery并发数'),
-    'celery_light_concurrency': fields.Integer(required=True, description='轻任务Celery并发数')
+    'celery_light_concurrency': fields.Integer(required=True, description='轻任务Celery并发数'),
+    'osint_concurrency': fields.Integer(required=True, description='OSINT任务并发数')
 })
 
 @ns.route('/security_policy')
@@ -68,7 +69,8 @@ class Performance(ARLResource):
             "message": "success",
             "data": {
                 "celery_heavy_concurrency": config.get("celery_heavy_concurrency", 2),
-                "celery_light_concurrency": config.get("celery_light_concurrency", 3)
+                "celery_light_concurrency": config.get("celery_light_concurrency", 3),
+                "osint_concurrency": config.get("osint_concurrency", 1)
             }
         }
 
@@ -81,20 +83,25 @@ class Performance(ARLResource):
         args = self.get_parser(performance_model).parse_args()
         new_heavy = args.get('celery_heavy_concurrency', 2)
         new_light = args.get('celery_light_concurrency', 3)
+        new_osint = args.get('osint_concurrency', 1)
 
         if new_heavy < 1:
             new_heavy = 1
         if new_light < 1:
             new_light = 1
+        if new_osint < 1:
+            new_osint = 1
 
         old_config = get_performance_config()
         old_heavy = old_config.get("celery_heavy_concurrency", 2)
         old_light = old_config.get("celery_light_concurrency", 3)
+        old_osint = old_config.get("osint_concurrency", 1)
         
         diff_heavy = new_heavy - old_heavy
         diff_light = new_light - old_light
+        new_osint - old_osint
 
-        update_performance_config(new_heavy, new_light)
+        update_performance_config(new_heavy, new_light, new_osint)
 
         msg = "性能配置更新成功。"
         
@@ -122,7 +129,7 @@ class Performance(ARLResource):
                     msg += " 并发进程热扩缩容指令已下发！"
                 else:
                     msg += " Celery未响应，并发改变将在下次重启生效。"
-            except Exception as e:
+            except Exception:
                 msg += " 热扩缩容执行异常，请重启容器。"
 
         return {
@@ -413,7 +420,6 @@ class RequestUpdateToken(ARLResource):
         请求一个用于进行系统更新的一次性 Token
         """
         import uuid
-        import os
         token = str(uuid.uuid4()).replace('-', '')
         
         try:

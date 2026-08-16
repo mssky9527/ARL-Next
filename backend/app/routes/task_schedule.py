@@ -1,6 +1,5 @@
 from bson import ObjectId
 import time
-from datetime import datetime
 from flask_restx import fields, Namespace
 from app.utils import get_logger, auth
 from app import utils
@@ -117,7 +116,7 @@ class ARLTaskScheduleResult(ARLResource):
                 data["start_date"] = start_date
                 data["next_run_date"] = start_date
                 data["cron"] = ""
-            except Exception as e:
+            except Exception:
                 return utils.build_ret(ErrorMsg.DateInvalid, {"start_date": start_date})
 
         # 周期任务处理
@@ -167,13 +166,13 @@ class DeleteARLTaskScheduler(ARLResource):
 
         ret_data = {"_id": job_id_list}
 
-        for job_id in job_id_list:
-            item = task_schedule.find_task_schedule(job_id)
+        for scheduler_id in job_id_list:
+            item = task_schedule.find_task_schedule(scheduler_id)
             if not item:
                 return utils.build_ret(ErrorMsg.TaskScheduleNotFound, ret_data)
 
-        for job_id in job_id_list:
-            task_schedule.remove_task_schedule(job_id)
+        for scheduler_id in job_id_list:
+            task_schedule.remove_task_schedule(scheduler_id)
 
         return utils.build_ret(ErrorMsg.Success, ret_data)
 
@@ -197,8 +196,8 @@ class StopARLTaskScheduler(ARLResource):
 
         ret_data = {"_id": job_id_list}
 
-        for job_id in job_id_list:
-            item = task_schedule.change_task_schedule_status(job_id, status=TaskScheduleStatus.STOP)
+        for scheduler_id in job_id_list:
+            item = task_schedule.change_task_schedule_status(scheduler_id, status=TaskScheduleStatus.STOP)
             if not item:
                 return utils.build_ret(ErrorMsg.TaskScheduleNotFound, ret_data)
 
@@ -227,8 +226,8 @@ class RecoverARLTaskScheduler(ARLResource):
 
         ret_data = {"_id": job_id_list}
 
-        for job_id in job_id_list:
-            item = task_schedule.change_task_schedule_status(job_id, status=TaskScheduleStatus.SCHEDULED)
+        for scheduler_id in job_id_list:
+            item = task_schedule.change_task_schedule_status(scheduler_id, status=TaskScheduleStatus.SCHEDULED)
             if not item:
                 return utils.build_ret(ErrorMsg.TaskScheduleNotFound, ret_data)
 

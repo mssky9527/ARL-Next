@@ -1,7 +1,8 @@
 <template>
-  <div style="background-color: var(--arl-bg-layout); padding: 24px; min-height: calc(100vh - 64px);">
+  <div :class="['asset-search-page', { 'is-virtual-mode': pagination.pageSize >= 100 }]" style="background-color: var(--arl-bg-layout); padding: 24px; min-height: calc(100vh - 64px);">
 
-        <a-tabs v-model:activeKey="activeTab" type="card" class="arl-detail-tabs">
+        <div ref="actionBarRef" style="position: sticky; top: 0px; z-index: 10; background-color: var(--arl-bg-layout); margin: -24px -24px 16px -24px; padding: 24px 24px 16px 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+    <a-tabs style="margin-bottom: 16px;" v-model:activeKey="activeTab" type="card" class="arl-detail-tabs">
       <a-tab-pane key="site" tab="站点"></a-tab-pane>
       <a-tab-pane key="domain" tab="子域名"></a-tab-pane>
       <a-tab-pane key="ip" tab="IP"></a-tab-pane>
@@ -16,12 +17,10 @@
       <a-tab-pane key="stat_finger" tab="指纹统计"></a-tab-pane>
       <a-tab-pane key="wih" tab="WIH"></a-tab-pane>
     </a-tabs>
-
-    <div v-if="tabConfig[activeTab]?.searchFields" class="search-row" style="margin-bottom: 16px;">
-      <div v-for="field in tabConfig[activeTab].searchFields" :key="field.key" class="search-item">
-        <span class="label">{{ field.label }}：</span>
-
-        <a-select
+<div v-if="tabConfig[activeTab]?.searchFields" style="margin-bottom: 16px;">
+      <a-form :model="searchForm" layout="inline" style="row-gap: 16px;">
+      <a-form-item v-for="field in tabConfig[activeTab].searchFields" :key="field.key" :label="field.label + '：'">
+                <a-select
             v-if="field.type === 'select'"
             v-model:value="searchForm[field.key]"
             :placeholder="`请选择${field.label}`"
@@ -89,7 +88,8 @@
             <search-outlined @click="onSearch" style="cursor: pointer; color: var(--arl-text-color); opacity: 0.25;" />
           </template>
         </a-input>
-      </div>
+      </a-form-item>
+      </a-form>
     </div>
 
     <div style="margin-bottom: 16px;">
@@ -97,13 +97,15 @@
       <a-button v-if="tabConfig[activeTab]?.exportName" type="primary" style="margin-right: 16px;" @click="handleExport">导出{{ tabConfig[activeTab].exportName }}</a-button>
       <a-button v-if="activeTab === 'site'" type="primary" @click="openRiskModal">风险任务下发</a-button>
     </div>
+    </div>
 
-    <a-table
+    <a-table :sticky="pagination.pageSize >= 100 ? false : stickyConfig"
         :loading="loading"
         :dataSource="dataSource"
         :columns="columns"
         :pagination="false"
-        :scroll="{ x: 'max-content' }"
+        :scroll="pagination.pageSize >= 100 ? { y: tableScrollY, x: 'max-content' } : { x: 'max-content' }"
+        :virtual="pagination.pageSize >= 100"
         size="middle"
         :rowKey="(record) => record._id || record.id"
     >
@@ -126,15 +128,13 @@
 
             <div class="mt5" style="display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
 
-              <a-tag v-if="record.is_entry || record.isEntry" closable style="background: var(--arl-bg-light); color: var(--arl-text-color); border-color: var(--arl-border-color);">入口</a-tag>
+              <a-tag v-if="record.is_entry || record.isEntry" style="background: var(--arl-bg-light); color: var(--arl-text-color); border-color: var(--arl-border-color);">入口</a-tag>
 
               <template v-for="(t, idx) in (record.tags || record.tag || [])" :key="idx">
-                <a-tag closable style="background: var(--arl-bg-light); color: var(--arl-text-color); border-color: var(--arl-border-color);" @close.prevent="handleRemoveTag(record, t)">
+                <a-tag style="background: var(--arl-bg-light); color: var(--arl-text-color); border-color: var(--arl-border-color);">
                   {{ typeof t === 'string' ? t : (t.name || t.tag_name || t) }}
                 </a-tag>
               </template>
-
-              <span class="add-tag" @click="openTagModal(record)" style="cursor: pointer;">添加标签</span>
             </div>
           </div>
         </template>
@@ -245,7 +245,7 @@
         </template>
 
         <template v-else-if="column.key === 'host'">
-          <span>{{ record.ip }}:{{ record.port }}</span>
+          <span>{{ record.ip || record.host }}{{ record.port ? ':' + record.port : '' }}</span>
         </template>
         <template v-else-if="column.key === 'cert_detail'">
           <div v-if="record.cert" style="font-size: 13px; line-height: 1.8; color: var(--arl-text-color); padding: 12px 0;">
@@ -381,7 +381,7 @@
 
     <div v-if="tabConfig[activeTab]" style="display: flex; justify-content: space-between; align-items: center; padding: 0 16px; margin-top: 16px;">
       <div style="color: var(--arl-text-color); opacity: 0.65;">共 {{ Math.ceil(pagination.total / pagination.pageSize) || 1 }} 页 / {{ pagination.total }} 条数据</div>
-      <a-pagination v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" @showSizeChange="handleTableChange" />
+      <a-pagination :pageSizeOptions="$pageSizeOptions" v-model:current="pagination.current" v-model:pageSize="pagination.pageSize" :total="pagination.total" show-size-changer @change="handleTableChange" @showSizeChange="handleTableChange" />
     </div>
 
     <a-modal v-model:open="previewVisible" :footer="null" width="85vw" centered @cancel="previewVisible = false" :bodyStyle="{ padding: '16px' }">
@@ -402,12 +402,7 @@
 
   </div>
 
-    <!-- 添加标签弹窗 -->
-    <a-modal v-model:open="tagVisible" title="添加标签" @ok="submitTag" :confirmLoading="tagSubmitLoading" width="400px" okText="确 定" cancelText="取 消">
-      <div style="margin-top: 20px;">
-        <a-input v-model:value="newTagValue" placeholder="请输入标签名称" />
-      </div>
-    </a-modal>
+
 
     <!-- 指纹统计关联站点弹窗 -->
     <a-modal v-model:open="fingerModalVisible" :title="`指纹关联站点：${currentFingerName}`" :footer="null" width="800px">
@@ -444,15 +439,33 @@
 </template>
 
 <script setup>
-import { ref, onMounted, reactive, watch , onUnmounted } from 'vue';
+
+import { ref as _ref_for_sticky, ref, onMounted, reactive, watch, onUnmounted, computed } from 'vue';
+import { useSticky } from '../utils/useSticky';
+const actionBarRef = _ref_for_sticky(null);
+const { stickyConfig, actionBarHeight } = useSticky(actionBarRef);
 import { useRoute } from 'vue-router';
 import request from '../utils/request';
 import { message } from 'ant-design-vue';
 import { SearchOutlined } from '@ant-design/icons-vue';
 import CidrDetailModal from '../components/CidrDetailModal.vue';
+import { useGlobalPageSize } from '../utils/useGlobalPageSize';
+
+const windowHeight = ref(typeof window !== 'undefined' ? window.innerHeight : 900);
+const onWindowResize = () => {
+  windowHeight.value = window.innerHeight;
+};
+
+// 动态测算可用纵向高度：
+// windowHeight 减去 Header(64px) - Layout margin(32px) - 容器 padding(48px) - 底部分页栏(48px) - 表头(55px) 与操作栏动态高度
+const tableScrollY = computed(() => {
+  const barHeight = actionBarHeight.value || 180;
+  const available = windowHeight.value - barHeight - 240;
+  return Math.max(280, available);
+});
 
 const route = useRoute();
-const activeTab = ref('site');
+const activeTab = ref(route.query.tab || 'site');
 const loading = ref(false);
 const dataSource = ref([]);
 
@@ -473,7 +486,7 @@ const openFingerModal = async (fingerName) => {
   fingerModalLoading.value = true;
   fingerModalData.value = [];
   try {
-    const res = await request.get('/asset_site/', {
+    const res = await request.get('/site/', {
       params: {
         finger: fingerName,
         page: 1,
@@ -489,16 +502,22 @@ const openFingerModal = async (fingerName) => {
   }
 };
 const searchForm = ref({});
-const pagination = reactive({ current: 1, pageSize: 10, total: 0 });
+const globalPageSize = useGlobalPageSize(10);
+const pagination = reactive({ current: 1, pageSize: globalPageSize.value, total: 0 });
+
+watch(() => pagination.pageSize, (newSize) => {
+  globalPageSize.value = newSize;
+});
 
 const previewVisible = ref(false);
 const previewImage = ref('');
 const handlePreview = (url) => { previewImage.value = url; previewVisible.value = true; };
 
-// 💡 简化版 Config：仅保留全局搜索需要的配置，去除 deleteUrl
 const tabConfig = reactive({
   site: {
-    url: '/asset_site/',
+    url: '/site/',
+    exportUrl: '/site/export/',
+    exportName: '站点',
     searchFields: [
       { label: '站点', key: 'site', operator: '=' },
       { label: '标题', key: 'title', operator: '=' },
@@ -528,8 +547,8 @@ const tabConfig = reactive({
   },
   // 💡 新增：子域名 Tab 的 1:1 配置
   domain: {
-    url: '/asset_domain/',
-    exportUrl: '/asset_domain/export/',
+    url: '/domain/',
+    exportUrl: '/domain/export/',
     exportName: '子域名',
     searchFields: [
       { label: '域名', key: 'domain', operator: '=' },
@@ -549,11 +568,10 @@ const tabConfig = reactive({
   },
 
   // 💡 新增：IP Tab 的 1:1 配置
-// 💡 新增：IP Tab 的 1:1 配置
   ip: {
-    url: '/asset_ip/',
-    deleteUrl: '/asset_ip/delete/', // 视上一轮测试情况，如果删不掉请改回 '/site/delete/'
-    exportUrl: '/asset_ip/export/',
+    url: '/ip/',
+    deleteUrl: '/ip/delete/', // 视上一轮测试情况，如果删不掉请改回 '/site/delete/'
+    exportUrl: '/ip/export/',
     exportName: ' IP 端口',
     searchFields: [
       { label: 'IP', key: 'ip', operator: '=' },
@@ -587,7 +605,7 @@ const tabConfig = reactive({
   },
   // 💡 重新构建：1:1 对齐截图的 SSL证书 配置
   cert: {
-    url: '/asset_cert/',
+    url: '/cert/',
     searchFields: [
       { label: 'IP字段', key: 'ip', operator: '=' },
       { label: '签发者名称', key: 'cert.issuer_dn', operator: '=' },
@@ -604,7 +622,7 @@ const tabConfig = reactive({
 
   // 💡 新增：服务 Tab 的 1:1 配置
   service: {
-    url: '/asset_service/',
+    url: '/service/',
     // 🚨 故意不写 exportUrl，完美对齐原版不带导出功能的 UI
     searchFields: [
       { label: '服务', key: 'service_name', operator: '=' },
@@ -622,7 +640,7 @@ const tabConfig = reactive({
 
   // 💡 新增：文件泄露 Tab 的 1:1 配置
   fileleak: {
-    url: '/asset_fileleak/',
+    url: '/fileleak/',
     // 🚨 同样不配置 exportUrl，隐身导出按钮
     searchFields: [
       { label: 'URL', key: 'url', operator: '=' },
@@ -641,8 +659,8 @@ const tabConfig = reactive({
 
   // 💡 新增：URL信息 Tab 的 1:1 配置
   url: {
-    url: '/asset_url/',
-    exportUrl: '/asset_url/export/', // 恢复导出接口
+    url: '/url/',
+    exportUrl: '/url/export/', // 恢复导出接口
     exportName: 'URL信息',     // 自动生成“导出URL信息”按钮
     searchFields: [
       { label: 'URL', key: 'url', operator: '=' },
@@ -682,7 +700,7 @@ const tabConfig = reactive({
 
   // 💡 新增：风险 Tab 的 1:1 配置
   vuln: {
-    url: '/asset_vuln/',
+    url: '/vuln/',
     // 🚨 截图显示无导出按钮，所以不配置 exportUrl
     searchFields: [
       { label: '漏洞名称', key: 'vul_name', operator: '=' },
@@ -703,17 +721,17 @@ const tabConfig = reactive({
 
   // 💡 新增：服务(python) Tab 的 1:1 配置
   npoc_service: {
-    url: '/asset_npoc_service/',
+    url: '/npoc_service/',
     // 🚨 截图显示无导出按钮，不配置 exportUrl
     searchFields: [
-      { label: '协议', key: 'protocol', operator: '=' },
+      { label: '协议', key: 'scheme', operator: '=' },
       { label: '主机', key: 'host', operator: '=' },
       { label: '端口', key: 'port', operator: '=' },
       { label: '目标', key: 'target', operator: '=' }
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
-      { title: '协议', dataIndex: 'protocol', key: 'protocol', width: 150 },
+      { title: '协议', dataIndex: 'scheme', key: 'scheme', width: 150 },
       { title: '主机', dataIndex: 'host', key: 'host', width: 200 },
       { title: '端口', dataIndex: 'port', key: 'port', width: 100, align: 'center' },
       { title: '目标', dataIndex: 'target', key: 'target', width: 250 },
@@ -723,8 +741,8 @@ const tabConfig = reactive({
 
   // 💡 新增：C段 Tab 的 1:1 配置
   cip: {
-    url: '/asset_cip/',
-    exportUrl: '/asset_cip/export/', // 恢复导出接口
+    url: '/cip/',
+    exportUrl: '/cip/export/', // 恢复导出接口
     exportName: 'C段',         // 自动生成“导出C段”按钮
     searchFields: [
       { label: 'C段', key: 'cidr_ip', operator: '=' }
@@ -739,14 +757,27 @@ const tabConfig = reactive({
 
   // 💡 新增：nuclei Tab 的 1:1 配置
   nuclei_result: {
-    url: '/asset_nuclei_result/',
-    deleteUrl: '/asset_nuclei_result/delete/', // 视后端情况，如果报错可改为 '/site/delete/'
+    url: '/nuclei_result/',
+    deleteUrl: '/nuclei_result/delete/', // 视后端情况，如果报错可改为 '/site/delete/'
     // 🚨 截图显示无导出按钮，不配置 exportUrl
     searchFields: [
       { label: '模版ID', key: 'template_id', operator: '=' },
       { label: '目标', key: 'target', operator: '=' },
       { label: '漏洞URL', key: 'vuln_url', operator: '=' },
-      { label: '漏洞名称', key: 'vuln_name', operator: '=' }
+      { label: '漏洞名称', key: 'vuln_name', operator: '=' },
+      { 
+        label: '漏洞等级', 
+        key: 'vuln_severity', 
+        operator: '=',
+        type: 'select',
+        options: [
+          { label: '严重', value: 'critical' },
+          { label: '高危', value: 'high' },
+          { label: '中危', value: 'medium' },
+          { label: '低危', value: 'low' },
+          { label: '信息', value: 'info' }
+        ]
+      }
     ],
     cols: [
       { title: '序号', key: 'index', width: 60, align: 'center' },
@@ -762,8 +793,8 @@ const tabConfig = reactive({
 
   // 💡 新增：指纹统计 Tab 的 1:1 配置
   stat_finger: {
-    url: '/asset_stat_finger/',
-    deleteUrl: '/asset_site/delete/', // 视后端情况，如果报错可改为 '/site/delete/'
+    url: '/stat_finger/',
+    deleteUrl: '/site/delete/', // 视后端情况，如果报错可改为 '/site/delete/'
     // 🚨 截图显示无导出按钮
     searchFields: [
       { 
@@ -785,8 +816,8 @@ const tabConfig = reactive({
   // 💡 新增：WIH (Web Info Hunter) Tab 的 1:1 配置
 // 💡 修复：WIH (Web Info Hunter) Tab 配置
   wih: {
-    url: '/asset_wih/',
-    exportUrl: '/asset_wih/export/',
+    url: '/wih/',
+    exportUrl: '/wih/export/',
     exportName: 'WIH',
     searchFields: [
       {
@@ -808,7 +839,7 @@ const tabConfig = reactive({
   }
 });
 
-const columns = ref(tabConfig.site.cols);
+const columns = ref(tabConfig[activeTab.value]?.cols || tabConfig.site.cols);
 
 // 🚨 核心逻辑调整：去掉 task_id 参数，纯净的全局搜索
 const fetchData = async () => {
@@ -897,8 +928,10 @@ watch(activeTab, (newVal) => {
 onMounted(() => {
   // Read query parameters to set initial tab and search form
   if (route.query.tab && tabConfig[route.query.tab]) {
-    activeTab.value = route.query.tab;
     columns.value = tabConfig[route.query.tab].cols;
+  } else if (route.query.tab) {
+    activeTab.value = 'site';
+    columns.value = tabConfig.site.cols;
   }
   
   // Set search form values from query parameters if they exist
@@ -908,7 +941,12 @@ onMounted(() => {
     }
   }
   
+  window.addEventListener('resize', onWindowResize);
   fetchData();
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', onWindowResize);
 });
 
 
@@ -968,9 +1006,7 @@ const submitRiskTask = async () => {
   finally { riskSubmitLoading.value = false; }
 };
 
-// 标签管理逻辑
-const tagVisible = ref(false);
-const tagSubmitLoading = ref(false);
+// 标签管理相关逻辑已被移除（大盘数据不再支持绑定标签）
 
 // C段详情弹窗 (提取为组件)
 const cipDetailModalVisible = ref(false);
@@ -979,58 +1015,6 @@ const currentCidrRecord = ref(null);
 const openCidrDetail = (record) => {
   currentCidrRecord.value = record;
   cipDetailModalVisible.value = true;
-};
-
-// 当前行操作菜单
-const newTagValue = ref('');
-const currentTagRecord = ref(null);
-
-const openTagModal = (record) => {
-  currentTagRecord.value = record;
-  newTagValue.value = '';
-  tagVisible.value = true;
-};
-
-const submitTag = async () => {
-  if (!newTagValue.value.trim()) {
-    return message.warning('标签名称不能为空');
-  }
-  tagSubmitLoading.value = true;
-  try {
-    const res = await request.post('/asset_site/add_tag/', {
-      _id: currentTagRecord.value._id || currentTagRecord.value.id,
-      tag: newTagValue.value.trim()
-    });
-    if (res.code === 200) {
-      message.success('添加标签成功');
-      tagVisible.value = false;
-      fetchData(); // 重新加载数据
-    } else {
-      message.error(res.message || '添加标签失败');
-    }
-  } catch (error) {
-    message.error('请求异常');
-  } finally {
-    tagSubmitLoading.value = false;
-  }
-};
-
-const handleRemoveTag = async (record, tag) => {
-  const tagStr = typeof tag === 'string' ? tag : (tag.name || tag.tag_name || tag);
-  try {
-    const res = await request.post('/asset_site/delete_tag/', {
-      _id: record._id || record.id,
-      tag: tagStr
-    });
-    if (res.code === 200) {
-      message.success('删除标签成功');
-      fetchData();
-    } else {
-      message.error(res.message || '删除标签失败');
-    }
-  } catch (error) {
-    message.error('请求异常');
-  }
 };
 
 </script>
@@ -1043,10 +1027,6 @@ const handleRemoveTag = async (record, tag) => {
 .add-tag:hover {  }
 .mt5 { margin-top: 5px; }
 
-.search-row { display: flex; flex-wrap: wrap; gap: 16px 24px; }
-.search-item { display: flex; align-items: center; }
-.search-item .label { color: var(--arl-text-color); margin-right: 8px; min-width: 80px; text-align: right; }
-
 .scroll-x { background: transparent; border: none; padding: 8px; width: 100%; max-width: 600px; overflow-x: auto; overflow-y: hidden; }
 .scroll-x pre { margin: 0; padding: 0; background-color: transparent; border: none; font-family: Consolas, Menlo, Courier, monospace; font-size: 12px; line-height: 1.5; color: var(--arl-text-color); opacity: 0.65; white-space: pre; word-wrap: normal; }
 .scroll-x::-webkit-scrollbar { height: 6px; }
@@ -1057,4 +1037,18 @@ const handleRemoveTag = async (record, tag) => {
 :deep(.ant-tabs-card-bar .ant-tabs-tab) { border-radius: 2px 2px 0 0 !important; margin-right: 4px !important; border: 1px solid var(--arl-border-color) !important; background: var(--arl-bg-light) !important; transition: all 0.3s; }
 :deep(.ant-tabs-card-bar .ant-tabs-tab-active) { background: var(--arl-bg-white) !important; border-bottom-color: transparent !important;  font-weight: 500; }
 :deep(.ant-tabs-tab:hover) {  }
+
+.asset-search-page.is-virtual-mode {
+  height: calc(100vh - 96px);
+  min-height: auto !important;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.asset-search-page.is-virtual-mode :deep(.ant-table-wrapper) {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
 </style>

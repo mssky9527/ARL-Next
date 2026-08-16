@@ -282,7 +282,7 @@ class beian:
     async def get_cookie(self, proxy=""):
         async with await self.get_session(proxy) as session:
             async with session.get(self.home, headers=self.cookie_headers, proxy=proxy if proxy else None) as req:
-                res = await req.text()
+                await req.text()
                 return re.compile("[0-9a-z]{32}").search(str(req.cookies))[0]
 
     def get_clientUid(self):

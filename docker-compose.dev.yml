@@ -98,7 +98,7 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
 
   osint-service:
-    build: ./backend/osint-service
+    build: ./backend/osint_service
     container_name: arl_osint-service_dev
     restart: always
     ports:

@@ -1,5 +1,5 @@
 <template>
-  <a-layout :style="{ minHeight: '100vh', background: 'transparent' }">
+  <a-layout :style="{ height: '100vh', background: 'transparent' }">
     <a-layout-sider v-model:collapsed="collapsed" collapsible :trigger="null" width="170" :style="{ background: hasBgImage ? (isUIHidden ? 'transparent' : 'rgba(11, 17, 32, 0.6)') : '#0b1120', borderRight: isUIHidden ? 'none' : (isDarkMode ? '1px solid #1e293b' : 'none'), transition: 'all 0.5s' }">
       <div class="logo-container" @click="toggleUI" title="点击隐藏/显示界面" style="height: 64px; display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 999; position: relative;" :style="{ background: hasBgImage ? 'transparent' : '#0b1120', borderBottom: isDarkMode ? '1px solid #1e293b' : 'none' }">
         <DeploymentUnitOutlined class="logo-icon" :style="{ color: 'var(--arl-theme-color)', fontSize: '20px' }" />
@@ -22,8 +22,8 @@
       </a-menu>
     </a-layout-sider>
 
-    <a-layout :style="{ background: 'transparent', opacity: isUIHidden ? 0 : 1, pointerEvents: isUIHidden ? 'none' : 'auto', transition: 'opacity 0.5s' }">
-      <a-layout-header :style="{ background: isDarkMode ? 'rgba(15, 23, 42, 0.75)' : 'rgba(255, 255, 255, 0.75)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid ' + (isDarkMode ? '#1e293b' : '#e2e8f0'), zIndex: 10, position: 'sticky', top: 0 }">
+    <a-layout :style="{ background: 'transparent', opacity: isUIHidden ? 0 : 1, pointerEvents: isUIHidden ? 'none' : 'auto', transition: 'opacity 0.5s', overflow: 'hidden' }">
+      <a-layout-header :style="{ background: isDarkMode ? 'rgba(15, 23, 42, 0.75)' : 'rgba(255, 255, 255, 0.75)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', padding: '0 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid ' + (isDarkMode ? '#1e293b' : '#e2e8f0'), zIndex: 10, position: 'relative' }">
         <div style="display: flex; align-items: center;">
           <span class="trigger" @click="() => (collapsed = !collapsed)" style="font-size: 18px; cursor: pointer; margin-right: 24px;">
             <menu-unfold-outlined v-if="collapsed" /><menu-fold-outlined v-else />
@@ -91,9 +91,13 @@
         </div>
       </a-layout-header>
 
-      <a-layout-content style="margin: 16px; display: flex; flex-direction: column;">
-        <div :style="{ background: hasBgImage ? (isDarkMode ? 'rgba(15, 23, 42, 0.5)' : 'rgba(255, 255, 255, 0.4)') : (isDarkMode ? '#0f172a' : 'transparent'), flex: 1, borderRadius: '4px', overflow: 'hidden' }">
-          <router-view></router-view>
+      <a-layout-content class="arl-main-content" style="margin: 16px; display: flex; flex-direction: column; overflow-y: auto; height: 0;">
+        <div :style="{ background: hasBgImage ? (isDarkMode ? 'rgba(15, 23, 42, 0.5)' : 'rgba(255, 255, 255, 0.4)') : (isDarkMode ? '#0f172a' : 'transparent'), flex: '1 0 auto', borderRadius: '4px' }">
+          <router-view v-slot="{ Component }">
+            <keep-alive include="AssetRecon,TaskList,AssetScope">
+              <component :is="Component" />
+            </keep-alive>
+          </router-view>
         </div>
         <div :style="{ textAlign: 'center', padding: '16px 0', color: isDarkMode ? 'rgba(255,255,255,.45)' : 'rgba(0,0,0,.45)', fontSize: '12px' }">
           Powered by ARL-Next
@@ -162,8 +166,7 @@
 </template>
 
 <script setup>
-import { ref,reactive, onMounted, watch, computed } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, reactive, onMounted, watch, computed, onUnmounted } from 'vue';import { useRoute, useRouter } from 'vue-router';
 // 引入 request (根据你的实际路径调整)
 import request from '@/utils/request';
 // 引入主题提取工具和 IndexedDB
@@ -284,7 +287,6 @@ onMounted(() => {
   timeInterval = setInterval(updateTime, 1000);
 });
 
-import { onUnmounted } from 'vue';
 onUnmounted(() => {
   window.removeEventListener('bg-image-changed', handleBgImageEvent);
   document.removeEventListener('click', restoreUI);
@@ -301,6 +303,12 @@ const handleLogout = () => {
 
 // 监听路由变化，保持左侧菜单高亮的一致性
 watch(() => route.path, (newPath) => {
+  // 切换页面时，将滚动容器恢复到顶部
+  const mainContent = document.querySelector('.arl-main-content');
+  if (mainContent) {
+    mainContent.scrollTop = 0;
+  }
+
   // 如果当前在详情页，依然让相应的菜单亮起
   if (newPath.startsWith('/taskList')) {
     selectedKeys.value = ['/taskList'];

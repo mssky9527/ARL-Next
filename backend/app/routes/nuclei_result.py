@@ -1,5 +1,5 @@
 from bson import ObjectId
-from flask_restx import Resource, Api, reqparse, fields, Namespace
+from flask_restx import fields, Namespace
 from app.utils import get_logger, auth
 from . import base_query_fields, ARLResource, get_arl_parser
 from app import utils
@@ -17,6 +17,7 @@ base_search_fields = {
     'vuln_url': fields.String(description="漏洞URL"),
     'curl_command': fields.String(description="curl 命令"),
     'target': fields.String(description="目标"),
+    'extracted_results': fields.String(description="提取内容"),
     "task_id": fields.String(description="任务ID")
 }
 
