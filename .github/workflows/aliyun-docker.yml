@@ -58,6 +58,8 @@ jobs:
           file: ./frontend/Dockerfile.prod
           platforms: linux/amd64
           push: true
+          provenance: false
+          sbom: false
           tags: ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/arl-frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -91,6 +93,8 @@ jobs:
           file: ./Dockerfile.prod
           platforms: linux/amd64
           push: true
+          provenance: false
+          sbom: false
           tags: |
             ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/arl-web:latest
             ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/arl-worker:latest
@@ -120,6 +124,8 @@ jobs:
           file: ./backend/Dockerfile.puppeteer
           platforms: linux/amd64
           push: true
+          provenance: false
+          sbom: false
           tags: ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/arl-puppeteer:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -146,6 +152,8 @@ jobs:
           context: ./backend/osint_service
           platforms: linux/amd64
           push: true
+          provenance: false
+          sbom: false
           tags: ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/osint-service:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
