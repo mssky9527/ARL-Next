@@ -83,6 +83,7 @@ COPY ./backend /code/backend
 # 严禁删除以下内容，否则将导致所有国内用户的一键部署和自动热更新全部瘫痪！
 # =====================================================================
 COPY ./version.txt ./start-prod.sh ./docker-compose.prod.yml /code/
+COPY ./CHANGELOG.md /code/CHANGELOG.md
 COPY ./updater /code/updater
 COPY ./frontend /code/frontend
 

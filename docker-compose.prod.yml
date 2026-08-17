@@ -39,6 +39,7 @@ services:
     working_dir: /code
     volumes:
       - arl_screenshots:/code/backend/app/tmp_screenshot
+      - arl_app_dicts:/code/backend/app/dicts
       - arl_poc_plugins:/code/backend/ARL-NPoC/xing/plugins
       - arl_poc_dicts:/code/backend/ARL-NPoC/xing/dicts
     environment:
@@ -82,6 +83,7 @@ services:
     working_dir: /code
     volumes:
       - arl_screenshots:/code/backend/app/tmp_screenshot
+      - arl_app_dicts:/code/backend/app/dicts
       - arl_poc_plugins:/code/backend/ARL-NPoC/xing/plugins
       - arl_poc_dicts:/code/backend/ARL-NPoC/xing/dicts
     environment:
@@ -171,5 +173,6 @@ volumes:
   mongo_data_v7:
   rabbitmq_data:
   arl_screenshots:
+  arl_app_dicts:
   arl_poc_plugins:
   arl_poc_dicts:

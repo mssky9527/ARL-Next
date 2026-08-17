@@ -17,7 +17,7 @@ dynamic_progress = {}
 
 def get_env_mode():
     try:
-        result = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], stdout=subprocess.PIPE, text=True)
+        result = subprocess.run(["docker", "ps", "--format", "{{.Names}}"], stdout=subprocess.PIPE, universal_newlines=True)
         if "arl-web-prod" in result.stdout:
             return "prod"
         elif "arl-web" in result.stdout:
@@ -30,6 +30,9 @@ def get_web_container():
     return "arl-web-prod" if get_env_mode() == "prod" else "arl-web"
 
 class PollingHandler(BaseHTTPRequestHandler):
+    def do_HEAD(self):
+        self.do_GET()
+
     def do_GET(self):
         parsed_url = urlparse(self.path)
         
@@ -108,10 +111,10 @@ class PollingHandler(BaseHTTPRequestHandler):
     def handle_auth_status(self):
         enabled = True
         try:
-            result = subprocess.run(["docker", "exec", "arl-frontend-prod", "cat", "/etc/nginx/conf.d/default.conf"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            result = subprocess.run(["docker", "exec", "arl-frontend-prod", "cat", "/etc/nginx/conf.d/default.conf"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
             if result.returncode == 0:
                 content = result.stdout
-                if re.search(r'# 开启 HTTP Basic Auth 阻挡被动扫描\\s*auth_basic\\s+off;', content):
+                if re.search(r'# 开启 HTTP Basic Auth 阻挡被动扫描\s*auth_basic\s+off;', content):
                     enabled = False
         except Exception:
             pass
@@ -139,7 +142,7 @@ class PollingHandler(BaseHTTPRequestHandler):
             pass
 
         try:
-            result = subprocess.run(["docker", "exec", "arl-frontend-prod", "cat", "/etc/nginx/conf.d/default.conf"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            result = subprocess.run(["docker", "exec", "arl-frontend-prod", "cat", "/etc/nginx/conf.d/default.conf"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
             if result.returncode == 0:
                 content = result.stdout
                 if enable:
@@ -310,12 +313,14 @@ class PollingHandler(BaseHTTPRequestHandler):
         if not provided_token:
             return False
         try:
-            result = subprocess.run(["docker", "exec", get_web_container(), "cat", TOKEN_FILE], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            result = subprocess.run(["docker", "exec", get_web_container(), "cat", TOKEN_FILE], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
             if result.returncode == 0:
                 valid_token = result.stdout.strip()
                 return provided_token == valid_token and len(valid_token) > 10
-        except Exception:
-            pass
+            else:
+                print(f"[WARN] Failed to read token file: {result.stderr.strip()}", file=sys.stderr)
+        except Exception as e:
+            print(f"[ERROR] Exception during verify_token: {str(e)}", file=sys.stderr)
         return False
 
 if __name__ == "__main__":

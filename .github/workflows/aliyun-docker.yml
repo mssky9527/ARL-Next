@@ -157,3 +157,53 @@ jobs:
           tags: ${{ env.ALIYUN_REGISTRY }}/${{ env.ALIYUN_NAMESPACE }}/osint-service:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  create-github-release:
+    if: github.repository == 'owl234/ARL-Next' && startsWith(github.ref, 'refs/tags/v')
+    needs: [build-frontend, build-web-worker, build-puppeteer, build-osint]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Extract Changelog for Current Tag
+        id: extract_notes
+        run: |
+          TAG="${{ github.ref_name }}"
+          python3 -c "
+          import re, sys
+
+          tag = '$TAG'
+          notes = ''
+          try:
+              with open('CHANGELOG.md', 'r', encoding='utf-8') as f:
+                  content = f.read()
+              pattern = rf'##\s*\[?{re.escape(tag)}\]?.*?\n(.*?)(?=\n##\s*\[?v|\Z)'
+              match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
+              if match:
+                  notes = match.group(1).strip()
+                  notes = re.sub(r'\n---+\s*$', '', notes).strip()
+          except Exception as e:
+              print(f'Error reading CHANGELOG.md: {e}')
+
+          if notes:
+              print(f'Found changelog section for {tag}')
+              with open('RELEASE_NOTES.md', 'w', encoding='utf-8') as rf:
+                  rf.write(notes)
+              with open(sys.argv[1] if len(sys.argv) > 1 else '/dev/null', 'a') as ef:
+                  ef.write('has_custom_notes=true\n')
+          else:
+              print(f'No matching changelog section found for {tag}')
+              with open(sys.argv[1] if len(sys.argv) > 1 else '/dev/null', 'a') as ef:
+                  ef.write('has_custom_notes=false\n')
+          " "$GITHUB_OUTPUT"
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: ${{ steps.extract_notes.outputs.has_custom_notes == 'true' && 'RELEASE_NOTES.md' || '' }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
